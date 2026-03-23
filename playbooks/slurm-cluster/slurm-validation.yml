@@ -11,7 +11,7 @@
   vars:
     # String; Container for nccl performance/validation tests. Either docker
     #   repo or can be path to sqsh file.
-    base_container: "nvcr.io/nvidia/tensorflow:21.09-tf2-py3"
+    base_container: "nvcr.io/nvidia/pytorch:25.08-py3"
     # String; Container to be created or one that might exist with nccl tests.
     #   If `compile_nccl_tests` is True, it must be a sqsh file.
     nccl_tests_container: "${HOME}/enroot_images/nccl_tests_slurm_val.sqsh"
@@ -24,7 +24,7 @@
     allreduce_command: "all_reduce_perf -b 1M -e 4G -f 2 -g 1"
     # Int; Number of GPUs per node. DGX-1 and DGX A100 Server have 8 GPUs.
     #   DGX-2 has 16 GPUs.
-    num_gpus: 8
+    num_gpus: 1
     # String; Slurm parition to use
     partition: batch
     # Time string; Time limit for the Slurm job.
@@ -37,7 +37,7 @@
     num_nodes:
     # Bool; Delete the `nccl_tests_container` after running the playbook, only
     #   if `compile_nccl_tests` is true as well.
-    cleanup: False
+    cleanup: false
 
   tasks:
     - name: Check that NCCL sqsh base container exists when sqsh is specified.

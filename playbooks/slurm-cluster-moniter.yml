@@ -1,0 +1,24 @@
+
+# Install monitoring services
+- include: slurm-cluster/prometheus.yml
+  vars:
+    hostlist: "{{ slurm_monitoring_group | default('slurm-metric') }}"
+  when: slurm_enable_monitoring
+- include: slurm-cluster/grafana.yml
+  vars:
+    hostlist: "{{ slurm_monitoring_group | default('slurm-metric') }}"
+  when: slurm_enable_monitoring
+- include: slurm-cluster/alertmanager.yml
+  vars:
+    hostlist: "{{ slurm_monitoring_group | default('slurm-metric') }}"
+  when: slurm_enable_monitoring
+  
+# Install monitoring exporters
+- include: slurm-cluster/prometheus-slurm-exporter.yml
+  vars:
+    hostlist: "{{ slurm_monitoring_group | default('slurm-metric') }}"
+  when: slurm_enable_monitoring
+- include: slurm-cluster/prometheus-node-exporter.yml
+  when: slurm_enable_monitoring
+- include: slurm-cluster/nvidia-dcgm-exporter.yml
+  when: slurm_enable_monitoring
