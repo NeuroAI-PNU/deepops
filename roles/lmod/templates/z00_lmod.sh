@@ -29,3 +29,5 @@ if [ $(id -u) -ne 0 ] ; then
     export MANPATH=$(/usr/share/lmod/lmod/libexec/addto MANPATH /usr/share/lmod/lmod/share/man)
     . /usr/share/lmod/lmod/init/bash >/dev/null # Module Support
 fi
+
+export MODULEPATH="{{ spack_module_path }}:$MODULEPATH"

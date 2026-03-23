@@ -1,0 +1,32 @@
+- name: Uninstall Monitoring Containers from Compute Nodes
+  # 🎯 Target ONLY the compute nodes!
+  hosts: slurm-node
+  become: yes
+  gather_facts: no
+
+  tasks:
+    - name: Ensure docker-compose is taken down
+      community.docker.docker_compose:
+        # ❗ IMPORTANT: Verify this path on one of your compute nodes.
+        # It's the directory where DeepOps created the docker-compose.yml file.
+        # Common locations are /opt/deepops/etc/monitoring or similar.
+        project_src: /opt/deepops/etc/monitoring
+        state: absent
+        # This removes associated volumes (like Prometheus data) and containers
+        remove_volumes: yes
+        remove_orphans: yes
+      ignore_errors: yes
+
+    - name: (Fallback) Forcefully remove containers by name if compose fails
+      community.docker.docker_container:
+        name: "{{ item }}"
+        state: absent
+      loop:
+        - docker.alertmanager.service
+        - docker.grafana.service
+        - docker.prometheus.service
+        - docker.slurm-exporter.service
+        - docker.node-exporter.service
+      # This task is a fallback; it runs only if the compose task fails
+      # or if you want to be absolutely sure the containers are gone.
+      ignore_errors: yes

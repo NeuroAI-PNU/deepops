@@ -493,6 +493,7 @@ On the monitoring host, the commands to use are:
 docker pull prom/prometheus
 systemctl restart docker.prometheus
 docker pull grafana/grafana
+## TODO
 systemctl restart docker.grafana
 docker pull deepops/prometheus-slurm-exporter
 systemctl restart docker.slurm-exporter
