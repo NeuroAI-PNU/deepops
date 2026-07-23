@@ -1,0 +1,243 @@
+################################################################################
+# Slurm                                                                        #
+################################################################################
+# Slurm job scheduler configuration
+# Playbook: slurm, slurm-cluster, slurm-perf, slurm-perf-cluster, slurm-validation
+slurm_version: "22.05.2"
+slurm_install_prefix: /usr/local
+pmix_install_prefix: /opt/deepops/pmix
+hwloc_install_prefix: /opt/deepops/hwloc
+#slurm_user_home: /local/slurm
+slurm_manage_gpus: true
+#slurm_cluster_name: deepops
+#slurm_username: slurm
+slurm_password: ReplaceWithASecurePasswordInTheVault
+#slurm_db_username: slurm
+slurm_db_password: AlsoReplaceWithASecurePasswordInTheVault
+#slurm_max_job_timelimit: INFINITE
+#slurm_default_job_timelimit:
+
+# Ensure hosts file generation only runs across slurm cluster
+hosts_add_ansible_managed_hosts_groups: ["slurm-cluster"]
+
+# Enable Slurm high-availability mode
+# NOTE: The location for Slurm saved state needs to reside in a location shared by all Slurm controller nodes
+#       Ideally this is on external NFS server and not the primary control node, since its failure
+#       would also take down that NFS share
+slurm_enable_ha: false
+slurm_ha_state_save_location: "/home/sw/slurm"
+
+# Slurm configuration is auto-generated from templates in the `slurm` role.
+# If you want to override any of these files with custom config files, please
+# set the following vars to the absolute path of your custom files.
+#
+#slurm_conf_template: "/etc/slurm/slurm.conf"
+#slurm_cgroup_conf_template: "/etc/slurm/cgroup.conf"
+#slurm_gres_conf_template: "/etc/slurm/gres.conf"
+#slurm_dbd_conf_template: "/etc/slurm/slurmdbd.conf"
+
+################################################################################
+# Login on compute
+################################################################################
+# Restrict user SSH access to only allow users with a running job
+slurm_restrict_node_access: false
+
+# List users who should always be able to SSH, even without a running job
+slurm_allow_ssh_user: []
+
+# Enable a Slurm compute node to also function as a login node.
+# This is needed for the "single node Slurm cluster" configuration.
+# See docs/slurm-cluster/slurm-single-node.md
+slurm_login_on_compute: false
+
+################################################################################
+# Kubespray - necessary configuration for Docker setup                         #
+################################################################################
+dns_mode: "none"
+dns_late: false
+
+################################################################################
+# Optional installs                                                            #
+################################################################################
+slurm_configure_etc_hosts: yes
+slurm_cluster_install_cuda: yes
+slurm_cluster_install_nvidia_driver: yes
+slurm_cluster_install_singularity: no
+
+################################################################################
+# NFS                                                                          #
+################################################################################
+# Default exports:
+# - /home: shared home directories, needed for Open OnDemand and best practice
+# - /sw:   shared space for software installs, used for Spack or EasyBuild
+#nfs_allowed_cidr: "192.168.0.0/24"
+
+nfs_exports:
+  - path: /srv/nfs4/
+    options: "*(rw,sync,fsid=0,crossmnt,no_subtree_check)"
+  - path: /srv/nfs4/home
+    options: "*(rw,sync,no_root_squash,no_subtree_check)"
+#  - path: /srv/nfs4/sw
+#    options: "*(rw,sync,no_root_squash,no_subtree_check)"
+nfs_mounts:
+  - mountpoint: /home
+    server: '{{ groups["slurm-master"][0] }}'
+    path: /home
+    options: async,vers=4.2,nconnect=8,rsize=1048576,wsize=1048576,noatime,hard,bg,nofail,_netdev
+  #- mountpoint: /sw
+  #  server: '{{ groups["slurm-master"][0] }}'
+  #  path: /sw
+  #  options: async,vers=4.2,nconnect=8,rsize=1048576,wsize=1048576,noatime,hard,bg,nofail,_netdev
+
+# Flags for enable/disable of NFS deployment
+#  - Set up an NFS server on nfs-server?
+slurm_enable_nfs_server: true
+#  - Mount NFS filesystems on nfs-clients?
+slurm_enable_nfs_client_nodes: true
+
+# Inventory host groups to use for NFS server or clients
+nfs_server_group: "slurm-master[0]"
+nfs_client_group: "slurm-master[1:],slurm-node"
+
+# Flags for sharing slurm.conf among compute and control nodes
+slurm_conf_symlink: false
+
+################################################################################
+# SOFTWARE MODULES (SM)                                                        #
+#   May be built with either EasyBuild or Spack                                #
+################################################################################
+slurm_install_lmod: true
+
+# Note: the sm_prefix must be in an NFS-shared location
+sm_prefix: "/home/sw"
+
+# Easybuild-specific
+sm_module_root: "{{ sm_prefix }}/modules"
+sm_software_path: "{{ sm_prefix }}/software"
+sm_files_path: "{{ sm_prefix }}/easybuild_files"
+sm_sources_path: "{{ sm_prefix }}/sources"
+sm_build_path: "{{ sm_prefix }}/build"
+sm_files_url: "https://github.com/DeepOps/easybuild_files.git"
+sm_install_default: true
+sm_module_path: "{{ sm_module_root }}/all"
+
+# Spack-specific
+spack_install_dir: "{{ sm_prefix }}/spack"
+spack_build_packages: true
+spack_default_packages:
+- "cuda@11.8.0"
+#- "cuda@10.2.89"
+#- "openmpi@3.1.6 +cuda +pmi schedulers=auto"
+spack_module_path: "{{ sm_prefix }}/spack/share/spack/lmod/linux-ubuntu22.04-x86_64/Core"
+
+
+
+# Which host should we run installs on for software going into the NFS share?
+sm_install_host: "slurm-master[0]"
+
+################################################################################
+# NVIDIA HPC SDK                                                               #
+################################################################################
+slurm_install_hpcsdk: true
+
+# Select the version of HPC SDK to download
+hpcsdk_major_version: "25"
+hpcsdk_minor_version: "7"
+hpcsdk_file_cuda: "11.8"
+hpcsdk_arch: "x86_64"
+
+hpcsdk_install_dir: "{{ sm_prefix }}/hpc-sdk"
+# after hpcsdk version 23. cuda version 11.8 supported with multi postfix
+hpcsdk_file_cuda : "multi"
+# In a Slurm cluster, default to setting up HPC SDK as modules rather than in
+# the default user environment
+hpcsdk_install_as_modules: true
+hpcsdk_install_in_path: false
+
+################################################################################
+# OpenMPI build                                                                #
+#                                                                              #
+# The openmpi.yml playbook will build a custom-configured OpenMPI based on the #
+# Slurm, PMIx, and hwloc on the cluster. In most cases you should be fine with #
+# using the OpenMPI provided in the HPC SDK, but if you need a custom build,   #
+# this can help you get started.
+################################################################################
+slurm_cluster_install_openmpi: false
+openmpi_version: 4.0.4
+openmpi_install_prefix: "/usr/local"
+openmpi_configure: "./configure --prefix={{ openmpi_install_prefix }} --disable-dependency-tracking --disable-getpwuid --with-pmix={{ pmix_install_prefix }} --with-hwloc={{ hwloc_install_prefix }} --with-pmi={{ slurm_install_prefix }} --with-slurm={{ slurm_install_prefix }} --with-libevent=/usr"
+
+################################################################################
+# Open OnDemand                                                                #
+################################################################################
+install_open_ondemand: no
+# OOD Linux-host adapter requires `slurm_cluster_install_singularity` to be true
+ood_install_linuxhost_adapter: no
+
+servername: '{{ ansible_fqdn }}'
+httpd_port: 9050
+httpd_listen_addr_port:
+  - 9050
+httpd_use_rewrites: false
+node_uri: /node
+rnode_uri: /rnode
+
+################################################################################
+# Allow the User Permission to Set GPU Clocks                                  #
+################################################################################
+allow_user_set_gpu_clocks: no
+
+################################################################################
+# Enroot & Pyxis                                                               #
+################################################################################
+slurm_install_enroot: true
+slurm_install_pyxis: true
+slurm_pyxis_version: 0.11.1
+
+# /run is default partition of pyxis runtime_path
+resize_run_partition: false
+
+# /run tmpfs size. ubuntu default is 10%
+pyxis_run_tmpfs_size: 50%
+
+################################################################################
+# Node Health Check                                                            #
+################################################################################
+slurm_install_nhc: yes
+slurm_health_check_program: "/usr/sbin/nhc"
+
+# The health check configuration generated by default in DeepOps is pretty
+# basic, and most cluster administrators will want to set up more extensive
+# NHC configurations with their local site customizations.
+# To set a custom file for Ansible to provision to /etc/nhc/nhc.conf, set the
+# following var:
+#
+#nhc_config_template: "/path/to/custom/nhc.conf"
+#
+# For documentation on the file format, see:
+# https://github.com/mej/nhc/blob/master/README.md
+
+################################################################################
+# Container registry                                                           #
+################################################################################
+slurm_enable_container_registry: true
+docker_insecure_registries: "{{ groups['slurm-master'] | map('regex_replace', '^(.*)$', '\\1:5000') | list + ['registry.local:31500'] }}"
+docker_registry_mirrors: "{{ groups['slurm-master'] | map('regex_replace', '^(.*)$', 'http://\\1:5000') | list }}"
+
+################################################################################
+# Monitoring stack                                                             #
+################################################################################
+slurm_enable_monitoring: true
+
+# Inventory host groups where cluster monitoring services will be installed
+# (Prometheus, Grafana, etc)
+slurm_monitoring_group: "slurm-master"
+
+################################################################################
+# Logging with rsyslog                                                         #
+################################################################################
+slurm_enable_rsyslog_server: true
+slurm_enable_rsyslog_client: true
+rsyslog_server_hostname: "{{ groups['slurm-master'][0] }}"
+rsyslog_client_tcp_host: "{{ rsyslog_server_hostname }}"
+rsyslog_client_group: "slurm-cluster"

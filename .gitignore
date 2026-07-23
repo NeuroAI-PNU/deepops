@@ -15,6 +15,7 @@
 /admin.conf
 /config*/
 !/config.example/
+!/config/
 /roles/galaxy/
 /collections/*
 /k8s-config/
