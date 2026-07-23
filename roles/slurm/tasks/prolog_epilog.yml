@@ -81,6 +81,14 @@
   tags:
     - prolog
 
+- name: copy task prolog script
+  template:
+    src: etc/slurm/task_prolog.sh
+    dest: "{{ slurm_config_dir }}/"
+    mode: 0755
+  tags:
+    - prolog
+
 - name: copy epilog script
   template:
     src: etc/slurm/epilog.sh

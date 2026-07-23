@@ -1,0 +1,3 @@
+---
+# RTX 4090 24GB
+slurm_node_features: "rtx4090,ada,vram24"

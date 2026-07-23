@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Slurm prolog.d: for shard jobs, ensure a per-user CUDA MPS control daemon is running.
+# Started as a transient systemd service (system.slice) so it is NOT captured by the job cgroup
+# and survives across concurrent/sequential shard jobs of the same user. Torn down by
+# epilog.d/55-lastuserjob-mps when the user has no more jobs on the node.
+# Runs as root. Must never fail the job -> always exit 0.
+set +e
+
+command -v nvidia-cuda-mps-control >/dev/null 2>&1 || exit 0
+command -v systemd-run          >/dev/null 2>&1 || exit 0
+
+jobid="${SLURM_JOB_ID:-${SLURM_JOBID:-}}"
+user="${SLURM_JOB_USER:-}"
+[ -z "$jobid" ] && exit 0
+[ -z "$user" ] || [ "$user" = "root" ] && exit 0
+
+# Only for shard jobs
+scontrol show job "$jobid" 2>/dev/null | grep -qiE 'gres[:/]shard' || exit 0
+
+uid=$(id -u "$user") || exit 0
+gid=$(id -g "$user") || exit 0
+pipe="/dev/shm/nvidia-mps-${uid}"
+log="/dev/shm/nvidia-mps-log-${uid}"
+unit="nvidia-mps-${uid}"
+
+# Already running for this user? (idempotent across concurrent shard jobs)
+systemctl is-active --quiet "$unit" && exit 0
+
+# Prepare per-user pipe/log dirs owned by the user
+for d in "$pipe" "$log"; do
+    mkdir -p "$d" 2>/dev/null
+    chown "$uid:$gid" "$d" 2>/dev/null
+    chmod 700 "$d" 2>/dev/null
+done
+
+# Launch the MPS control daemon as the user, outside the job cgroup (transient unit in system.slice).
+systemd-run --collect --quiet --unit="$unit" \
+    --uid="$uid" --gid="$gid" \
+    -p Type=forking \
+    --setenv=CUDA_MPS_PIPE_DIRECTORY="$pipe" \
+    --setenv=CUDA_MPS_LOG_DIRECTORY="$log" \
+    /usr/bin/nvidia-cuda-mps-control -d 2>/dev/null
+
+logger -t slurm-prolog "MPS: ensured control daemon unit=$unit for user=$user (job=$jobid)"
+exit 0

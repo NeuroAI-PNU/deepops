@@ -1,0 +1,3 @@
+---
+# Blackwell 96GB x2
+slurm_node_features: "blackwell,vram96"

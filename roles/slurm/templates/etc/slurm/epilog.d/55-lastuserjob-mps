@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Slurm epilog.d: tear down this user's MPS control daemon.
+# The "-lastuserjob-" tag makes run-parts.sh run this ONLY when the user has no more
+# running jobs on the node, so concurrent shard jobs are never disrupted mid-run.
+# Runs as root. Must never fail -> always exit 0.
+set +e
+
+user="${SLURM_JOB_USER:-}"
+[ -z "$user" ] || [ "$user" = "root" ] && exit 0
+
+uid=$(id -u "$user" 2>/dev/null) || exit 0
+unit="nvidia-mps-${uid}"
+pipe="/dev/shm/nvidia-mps-${uid}"
+log="/dev/shm/nvidia-mps-log-${uid}"
+
+if systemctl is-active --quiet "$unit"; then
+    # Ask MPS to quit gracefully, then stop the unit.
+    runuser -u "$user" -- bash -c "CUDA_MPS_PIPE_DIRECTORY='$pipe' echo quit | CUDA_MPS_PIPE_DIRECTORY='$pipe' nvidia-cuda-mps-control" 2>/dev/null
+    systemctl stop "$unit" 2>/dev/null
+    logger -t slurm-epilog "MPS: stopped control daemon unit=$unit for user=$user"
+fi
+rm -rf "$pipe" "$log" 2>/dev/null
+exit 0

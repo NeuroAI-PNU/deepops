@@ -1,0 +1,4 @@
+---
+# RTX A6000 48GB, shared as 4 shards
+slurm_node_features: "a6000,ampere,vram48,shard"
+slurm_gpu_shards: 4
