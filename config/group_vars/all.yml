@@ -145,6 +145,14 @@ gpu_clock_lock: "1507,1507"
 # Debugging var: force install NVIDIA driver even if GPU not detected
 nvidia_driver_force_install: false
 
+# NVIDIA driver: unify all nodes on the 580 branch (Ampere/Ada/Blackwell,
+# supports CUDA 12.8+ needed by gromacs@2025 spack builds).
+# Blackwell (neuroai4) requires open kernel modules; use them cluster-wide
+# (supported on Turing+, NVIDIA default since 580).
+nvidia_driver_branch: "580"
+nvidia_driver_ubuntu_branch: "580"
+nvidia_driver_ubuntu_use_open_kernel_modules: true
+
 
 ################################################################################
 # CONTAINER RUNTIME                                                            #
