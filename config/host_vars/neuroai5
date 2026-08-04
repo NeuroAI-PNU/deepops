@@ -1,3 +1,15 @@
 ---
 # RTX 4090 24GB
-slurm_node_features: "rtx4090,ada,vram24"
+slurm_node_features: "rtx4090,ada,vram24,shard"
+# shards per GPU (node total = GPU count * this)
+slurm_gpu_shards: 4
+
+# Hybrid CPU (P-cores with SMT + E-cores without): the topology custom fact
+# reports cores_per_socket=24 / threads_per_core=2 => logical_cpus=48, but only
+# 32 CPUs are actually online. Override so Slurm is not told the node has more
+# CPUs than it can offer (which would leave jobs pending forever).
+slurm_cpu_topology_override:
+  sockets: 1
+  cores_per_socket: 32
+  threads_per_core: 1
+  logical_cpus: 32

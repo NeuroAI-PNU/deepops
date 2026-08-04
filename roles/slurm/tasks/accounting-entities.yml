@@ -1,0 +1,102 @@
+---
+# Create/update the QOS, accounts and users held in the slurmdbd database.
+# Driven by slurm_qos and slurm_accounts so that the cluster's accounting policy
+# lives in the DeepOps config instead of being hand-applied with sacctmgr.
+#
+# sacctmgr is idempotent-friendly but not idempotent: "add" reports
+# "Nothing new added" / "Already existing" when the entity exists, and "modify"
+# reports nothing when the settings already match. Both are keyed off below so
+# reruns report no change.
+
+- name: create qos
+  command: sacctmgr -i add qos {{ item.name }}
+  register: create_qos_result
+  failed_when: >
+    create_qos_result.rc != 0 and
+    'Nothing new added' not in create_qos_result.stdout and
+    'Nothing added' not in create_qos_result.stdout and
+    'already exists' not in create_qos_result.stdout and
+    'Already existing' not in create_qos_result.stdout
+  changed_when: >
+    'Nothing new added' not in create_qos_result.stdout and
+    'Nothing added' not in create_qos_result.stdout and
+    'already exists' not in create_qos_result.stdout and
+    'Already existing' not in create_qos_result.stdout
+  with_items: "{{ slurm_qos }}"
+  environment:
+    PATH: '{{ slurm_install_prefix }}/bin:{{ ansible_env.PATH }}'
+  run_once: true
+
+- name: configure qos
+  command: >-
+    sacctmgr -i modify qos {{ item.name }} set
+    Description="{{ item.description | default(item.name) }}"
+    {{ item.settings | default('') }}
+  register: configure_qos_result
+  failed_when: configure_qos_result.rc != 0
+  changed_when: "'Nothing modified' not in configure_qos_result.stdout"
+  with_items: "{{ slurm_qos }}"
+  environment:
+    PATH: '{{ slurm_install_prefix }}/bin:{{ ansible_env.PATH }}'
+  run_once: true
+
+- name: create accounts
+  command: >-
+    sacctmgr -i add account {{ item.name }}
+    Description="{{ item.description | default(item.name) }}"
+    Organization="{{ item.organization | default(item.name) }}"
+  register: create_account_result
+  failed_when: >
+    create_account_result.rc != 0 and
+    'Nothing new added' not in create_account_result.stdout and
+    'Nothing added' not in create_account_result.stdout and
+    'Already existing' not in create_account_result.stdout
+  changed_when: >
+    'Nothing new added' not in create_account_result.stdout and
+    'Nothing added' not in create_account_result.stdout and
+    'Already existing' not in create_account_result.stdout
+  with_items: "{{ slurm_accounts }}"
+  environment:
+    PATH: '{{ slurm_install_prefix }}/bin:{{ ansible_env.PATH }}'
+  run_once: true
+
+- name: create users
+  command: >-
+    sacctmgr -i create user {{ item.1 }} account={{ item.0.name }} adminlevel=None
+    {% if item.0.qos is defined %}qos={{ item.0.qos }}{% endif %}
+    {% if item.0.default_qos is defined %}defaultqos={{ item.0.default_qos }}{% endif %}
+  register: create_user_result
+  failed_when: >
+    create_user_result.rc != 0 and
+    'Nothing new added' not in create_user_result.stdout and
+    'Nothing added' not in create_user_result.stdout and
+    'Already existing' not in create_user_result.stdout
+  changed_when: >
+    'Nothing new added' not in create_user_result.stdout and
+    'Nothing added' not in create_user_result.stdout and
+    'Already existing' not in create_user_result.stdout
+  with_subelements:
+    - "{{ slurm_accounts }}"
+    - users
+    - skip_missing: true
+  environment:
+    PATH: '{{ slurm_install_prefix }}/bin:{{ ansible_env.PATH }}'
+  run_once: true
+
+# Existing users keep whatever QOS they were created with, so set it explicitly
+# for accounts that pin one. This also fixes up users added before a QOS change.
+- name: configure user qos
+  command: >-
+    sacctmgr -i modify user {{ item.1 }} account={{ item.0.name }} set
+    qos={{ item.0.qos }}
+    {% if item.0.default_qos is defined %}defaultqos={{ item.0.default_qos }}{% endif %}
+  register: configure_user_qos_result
+  failed_when: configure_user_qos_result.rc != 0
+  changed_when: "'Nothing modified' not in configure_user_qos_result.stdout"
+  with_subelements:
+    - "{{ slurm_accounts | selectattr('qos', 'defined') | list }}"
+    - users
+    - skip_missing: true
+  environment:
+    PATH: '{{ slurm_install_prefix }}/bin:{{ ansible_env.PATH }}'
+  run_once: true

@@ -1,3 +1,5 @@
 ---
-# RTX A2000 6GB
-slurm_node_features: "a2000,ampere,vram6"
+# RTX A2000 6GB -- only 6GB VRAM, so fewer shards than the big cards
+slurm_node_features: "a2000,ampere,vram6,shard"
+# shards per GPU (node total = GPU count * this)
+slurm_gpu_shards: 2

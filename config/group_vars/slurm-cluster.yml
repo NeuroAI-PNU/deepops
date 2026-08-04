@@ -17,6 +17,92 @@ slurm_db_password: AlsoReplaceWithASecurePasswordInTheVault
 #slurm_max_job_timelimit: INFINITE
 #slurm_default_job_timelimit:
 
+# GPU sharing: every node exposes shards (fractional GPUs) alongside whole GPUs.
+# Per-node shard counts live in host_vars/neuroaiN (slurm_gpu_shards, per GPU).
+slurm_gres_types: "gpu,shard"
+slurm_accounting_storage_tres: "gres/gpu,gres/shard"
+# Enforce the QOS limits defined in slurm_qos below.
+slurm_accounting_storage_enforce: "limits,qos"
+
+# Partitions. Priority doubles as PriorityTier, so a higher number both raises
+# job priority and lets jobs preempt-queue ahead in the backfill scheduler.
+# All partitions share DefMemPerCPU=0 State=UP OverSubscribe=NO (see template).
+slurm_partitions:
+  - name: short
+    nodes: ALL
+    max_time: "04:00:00"
+    default_time: "01:00:00"
+    priority: 100
+  - name: batch
+    nodes: ALL
+    max_time: "7-00:00:00"
+    default_time: "1-00:00:00"
+    priority: 10
+    default: true
+  - name: gpu
+    nodes: "neuroai1,neuroai2,neuroai3,neuroai5"
+    max_time: "7-00:00:00"
+    default_time: "1-00:00:00"
+    priority: 50
+  - name: gpu_big
+    nodes: "neuroai4"
+    max_time: "7-00:00:00"
+    default_time: "1-00:00:00"
+    priority: 60
+    qos: gpu_big
+    extra: "DefCpuPerGPU=2"
+    comment: "no account restriction here: campus users are capped by QOS quotas (gpu=1,shard=4), not by partition access"
+  - name: cpu
+    nodes: "neuroai1,neuroai3,neuroai5"
+    max_time: "7-00:00:00"
+    default_time: "1-00:00:00"
+    priority: 40
+
+# QOS quotas. `settings` is passed verbatim to `sacctmgr modify qos <name> set`.
+slurm_qos:
+  - name: normal
+    description: "Normal QOS default"
+    settings: >-
+      MaxWall=7-00:00:00
+      MaxTRESPerUser=cpu=96,gres/gpu=3,gres/shard=12,mem=244G
+      MaxJobsPerUser=10 MaxSubmitJobsPerUser=200
+  - name: gpu_big
+    description: "gpu_big: max 1 gpu per user"
+    settings: "MaxTRESPerUser=gres/gpu=1,gres/shard=4"
+  - name: campus
+    description: "campus collaborators: per-user gpu=1,cpu=16,mem=96g"
+    settings: >-
+      MaxTRESPerUser=cpu=16,gres/gpu=1,gres/shard=4,mem=96G
+      MaxJobsPerUser=5 MaxSubmitJobsPerUser=15
+
+# Accounts and their members.
+slurm_accounts:
+  - name: compute-account
+    description: "compute accounts"
+    organization: prestige
+    qos: normal
+    users:
+      - changhyun
+      - eunjin
+      - eunsoo
+      - hyunjin
+      - hyunsu
+      - jeongin
+      - jeongmo
+      - nahyeon
+      - seohee
+      - sungsu
+      - test_neuroai
+      - yongsu
+      - yunseong
+  - name: campus
+    description: "collaborating labs (campus)"
+    organization: campus
+    qos: campus
+    default_qos: campus
+    users:
+      - seoyul
+
 # Ensure hosts file generation only runs across slurm cluster
 hosts_add_ansible_managed_hosts_groups: ["slurm-cluster"]
 

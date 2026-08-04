@@ -1,3 +1,5 @@
 ---
-# Blackwell 96GB x2
-slurm_node_features: "blackwell,vram96"
+# RTX PRO 6000 Blackwell 96GB x2
+slurm_node_features: "blackwell,vram96,shard"
+# shards per GPU -- 2 GPUs * 4 = 8 shards on this node
+slurm_gpu_shards: 4

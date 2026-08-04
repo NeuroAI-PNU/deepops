@@ -32,6 +32,17 @@ slurm_allow_ssh_user: []
 slurm_db_username: slurm
 slurm_db_password: AlsoReplaceWithASecurePasswordInTheVault
 
+# Accounting entities created in slurmdbd. Each account may set qos/default_qos
+# and lists the users associated with it. Each qos entry takes a description and
+# a `settings` string passed verbatim to `sacctmgr modify qos ... set`.
+slurm_qos: []
+slurm_accounts:
+  - name: compute-account
+    description: "Compute Accounts"
+    organization: "Prestige"
+    users:
+      - "{{ user }}"
+
 slurm_enable_ha: false
 slurm_ha_state_save_location: "/sw/slurm"
 

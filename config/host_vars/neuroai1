@@ -1,4 +1,5 @@
 ---
-# RTX A6000 48GB, shared as 4 shards
+# RTX A6000 48GB
 slurm_node_features: "a6000,ampere,vram48,shard"
+# shards per GPU (node total = GPU count * this)
 slurm_gpu_shards: 4
