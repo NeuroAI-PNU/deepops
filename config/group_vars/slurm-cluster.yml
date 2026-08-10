@@ -44,16 +44,19 @@ slurm_partitions:
     max_time: "7-00:00:00"
     default_time: "1-00:00:00"
     priority: 50
-  - name: gpu_big
-    nodes: "neuroai4"
-    max_time: "7-00:00:00"
-    default_time: "1-00:00:00"
-    priority: 60
-    qos: gpu_big
-    extra: "DefCpuPerGPU=2"
-    comment: "no account restriction here: campus users are capped by QOS quotas (gpu=1,shard=4), not by partition access"
+  # gpu_big held neuroai4 while it had the Blackwell cards (removed 2026-08-10).
+  # Kept here so a future big-VRAM node only needs this uncommented plus the
+  # matching host_vars entries; the gpu_big QOS is still defined below.
+  # - name: gpu_big
+  #   nodes: "neuroai4"
+  #   max_time: "7-00:00:00"
+  #   default_time: "1-00:00:00"
+  #   priority: 60
+  #   qos: gpu_big
+  #   extra: "DefCpuPerGPU=2"
+  #   comment: "no account restriction here: campus users are capped by QOS quotas (gpu=1,shard=4), not by partition access"
   - name: cpu
-    nodes: "neuroai1,neuroai3,neuroai5"
+    nodes: "neuroai1,neuroai3,neuroai4,neuroai5"
     max_time: "7-00:00:00"
     default_time: "1-00:00:00"
     priority: 40
@@ -64,8 +67,10 @@ slurm_qos:
     description: "Normal QOS default"
     settings: >-
       MaxWall=7-00:00:00
-      MaxTRESPerUser=cpu=96,gres/gpu=3,gres/shard=12,mem=244G
+      MaxTRESPerUser=cpu=96,gres/gpu=2,gres/shard=8,mem=244G
       MaxJobsPerUser=10 MaxSubmitJobsPerUser=200
+  # No partition uses gpu_big since the Blackwell cards left neuroai4; retained
+  # for whenever a big-VRAM node comes back (see the partition list above).
   - name: gpu_big
     description: "gpu_big: max 1 gpu per user"
     settings: "MaxTRESPerUser=gres/gpu=1,gres/shard=4"
@@ -85,13 +90,11 @@ slurm_accounts:
       - changhyun
       - eunjin
       - eunsoo
-      - hyunjin
       - hyunsu
       - jeongin
       - jeongmo
       - nahyeon
       - seohee
-      - sungsu
       - test_neuroai
       - yongsu
       - yunseong

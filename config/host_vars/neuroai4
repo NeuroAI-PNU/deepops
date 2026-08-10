@@ -1,5 +1,7 @@
 ---
-# RTX PRO 6000 Blackwell 96GB x2
-slurm_node_features: "blackwell,vram96,shard"
-# shards per GPU -- 2 GPUs * 4 = 8 shards on this node
-slurm_gpu_shards: 4
+# CPU-only node: Xeon E5-2699 v4 (Broadwell), 22 cores / 44 threads.
+# The 2x RTX PRO 6000 Blackwell cards were removed on 2026-08-10.
+# If GPUs are fitted again: restore slurm_gpu_shards (shards per GPU), put the
+# GPU tags back in slurm_node_features, and re-enable the gpu_big partition in
+# group_vars/slurm-cluster.yml.
+slurm_node_features: "cpu_only,broadwell,e5v4"

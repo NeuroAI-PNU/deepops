@@ -135,6 +135,20 @@
     src: "{{ slurm_gres_conf_template }}"
     dest: "{{ slurm_config_dir }}/gres.conf"
     mode: "0644"
+  when: ansible_local["topology"]["gpu_topology"] | count > 0
+  notify:
+  - restart slurmd
+  tags:
+  - config
+
+# A node whose GPUs were removed must not keep a gres.conf behind: AutoDetect=nvml
+# on a GPU-less node makes slurmd complain about resources slurm.conf never
+# declares for it.
+- name: remove gres.conf on nodes without GPUs
+  file:
+    path: "{{ slurm_config_dir }}/gres.conf"
+    state: absent
+  when: ansible_local["topology"]["gpu_topology"] | count == 0
   notify:
   - restart slurmd
   tags:
