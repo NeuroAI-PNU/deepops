@@ -5,3 +5,12 @@
 # GPU tags back in slurm_node_features, and re-enable the gpu_big partition in
 # group_vars/slurm-cluster.yml.
 slurm_node_features: "cpu_only,broadwell,e5v4"
+# 2026-09-11: neuroai4 is the LOGIN node (external port 53007) and stays a compute node.
+# 6 cores (12 threads) + 64 GB are reserved for interactive users; Slurm gets 32 threads / ~56 GB.
+# Per-user interactive caps (CPUQuota=1200%, MemoryMax=64G) and the pam_systemd session setup
+# live in config/playbooks/login-compute-guardrails.yml.
+slurm_node_extra: "CoreSpecCount=6 MemSpecLimit=65536"
+# Login node: users must be able to ssh in without a job, and pam_slurm_adopt (22.05.2) has a
+# cgroup-v2 crash path with 2+ jobs of the same user on the node.
+slurm_enable_pam_slurm_adopt: false
+slurm_restrict_node_access: false

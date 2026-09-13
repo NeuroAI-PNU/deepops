@@ -50,6 +50,10 @@ ldap
 ldap
 
 [slurm-node]
+# ldap (slurm-master / NFS server) is ALSO a cpu-partition compute node since 2026-09-13.
+# Its guardrails (CoreSpecCount/MemSpecLimit in host_vars/ldap, slurmstepd.scope IO+memory caps
+# in config/playbooks/login-compute-guardrails.yml) must stay in place while it is listed here.
+ldap
 neuroai1
 neuroai2
 neuroai3

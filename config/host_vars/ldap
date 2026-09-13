@@ -1,0 +1,18 @@
+---
+# ldap = slurm-master + NFS(/home) + LDAP + monitoring host, AND (since 2026-09-13) a cpu-only
+# compute node. Xeon w7-3445 (Sapphire Rapids) 20 cores / 40 threads, 128 GB, no GPU.
+#
+# Service headroom is reserved two ways:
+#  - Slurm side (below): 5 cores (10 threads) + 40 GB never scheduled  -> jobs see 30 threads / ~85 GB.
+#  - systemd side (config/playbooks/login-compute-guardrails.yml): slurmstepd.scope drop-in caps
+#    ALL jobs together at MemoryMax=80G and md126 IO 100 MB/s read + 100 MB/s write, regardless
+#    of what jobs request. A local job can otherwise saturate the /home RAID far faster than any
+#    1G NFS client can (2026-09-11 incident).
+# Weight=100 makes the scheduler prefer every other node first.
+# ldap is a member of the `cpu` partition only (short/batch list nodes explicitly), so every job
+# that lands here carries a memory request (cpu has DefMemPerCPU=1024).
+slurm_node_features: "cpu_only,sapphirerapids,w7"
+slurm_node_extra: "CoreSpecCount=5 MemSpecLimit=40960 Weight=100"
+# No user SSH restriction on the controller: only admins log in here.
+slurm_enable_pam_slurm_adopt: false
+slurm_restrict_node_access: false

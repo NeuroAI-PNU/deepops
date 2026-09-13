@@ -26,15 +26,20 @@ slurm_accounting_storage_enforce: "limits,qos"
 
 # Partitions. Priority doubles as PriorityTier, so a higher number both raises
 # job priority and lets jobs preempt-queue ahead in the backfill scheduler.
-# All partitions share DefMemPerCPU=0 State=UP OverSubscribe=NO (see template).
+# All partitions share State=UP OverSubscribe=NO (see template). DefMemPerCPU is 0 unless
+# def_mem_per_cpu is set. NOTE: cgroup.conf has ConstrainRAMSpace=yes on every node, so a
+# non-zero DefMemPerCPU is ENFORCED (jobs without --mem get OOM-killed at that limit).
+#
+# short/batch list the compute nodes explicitly instead of ALL so that ldap (in slurm-node
+# since 2026-09-13) only receives jobs through `cpu`, where every job carries a memory request.
 slurm_partitions:
   - name: short
-    nodes: ALL
+    nodes: "neuroai[1-5]"
     max_time: "04:00:00"
     default_time: "01:00:00"
     priority: 100
   - name: batch
-    nodes: ALL
+    nodes: "neuroai[1-5]"
     max_time: "7-00:00:00"
     default_time: "1-00:00:00"
     priority: 10
@@ -56,10 +61,12 @@ slurm_partitions:
   #   extra: "DefCpuPerGPU=2"
   #   comment: "no account restriction here: campus users are capped by QOS quotas (gpu=1,shard=4), not by partition access"
   - name: cpu
-    nodes: "neuroai1,neuroai3,neuroai4,neuroai5"
+    nodes: "neuroai1,neuroai3,neuroai4,neuroai5,ldap"
     max_time: "7-00:00:00"
     default_time: "1-00:00:00"
     priority: 40
+    # 2026-09-13: 1 GB/CPU default so MemSpecLimit accounting on ldap/neuroai4 is real.
+    def_mem_per_cpu: 1024
 
 # QOS quotas. `settings` is passed verbatim to `sacctmgr modify qos <name> set`.
 slurm_qos:

@@ -1,0 +1,102 @@
+---
+# Site playbook (NeuroAI cluster): guardrails for nodes that mix Slurm jobs with other roles.
+# Applied by hand on 2026-09-11..13; this playbook makes them re-applicable.
+#
+#   neuroai4  login node (external 53007) + cpu compute node
+#   ldap      slurm-master + NFS(/home) + LDAP + monitoring + cpu compute node
+#
+# Run:  ansible-playbook -i config/inventory config/playbooks/login-compute-guardrails.yml
+# Safe to re-run; only the listed files/lines are touched. Restart of sshd/slurmd is NOT done here
+# (the systemd drop-ins take effect on daemon-reload; slurm.conf changes come from the slurm role).
+
+- name: Login node (neuroai4) - per-user interactive caps and session accounting
+  hosts: neuroai4
+  become: yes
+  tasks:
+    - name: user-.slice drop-ins (MemoryMax/CPUQuota per user)
+      copy:
+        src: "{{ playbook_dir }}/../files/guardrails/neuroai4/{{ item }}"
+        dest: /etc/systemd/system/user-.slice.d/{{ item }}
+        owner: root
+        group: root
+        mode: "0644"
+      loop:
+        - 50-memory-limit.conf
+        - 60-cpu-quota.conf
+      notify: daemon-reload
+
+    - name: sshd reads sshd_config.d (2017-era template lacks the Include line)
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        line: "Include /etc/ssh/sshd_config.d/*.conf"
+        insertbefore: '^Port '
+        firstmatch: yes
+        validate: "/usr/sbin/sshd -t -f %s"
+
+    - name: sshd MaxStartups for many concurrent VS Code / tunnel logins
+      copy:
+        src: "{{ playbook_dir }}/../files/guardrails/neuroai4/10-startups.conf"
+        dest: /etc/ssh/sshd_config.d/10-startups.conf
+        owner: root
+        group: root
+        mode: "0644"
+
+    # pam_systemd puts each ssh session into user-<uid>.slice so the drop-ins above apply.
+    # deepops' compute-node PAM leaves it commented out in common-session, so add it to sshd.
+    - name: pam_systemd in /etc/pam.d/sshd
+      lineinfile:
+        path: /etc/pam.d/sshd
+        regexp: '^session\s+optional\s+pam_systemd\.so'
+        line: "session    optional     pam_systemd.so"
+        insertafter: '^session\s+optional\s+pam_ldap\.so'
+
+  handlers:
+    - name: daemon-reload
+      systemd:
+        daemon_reload: yes
+
+- name: Login/compute and controller/compute nodes - epilog must not kill non-job sessions
+  hosts: neuroai4:ldap
+  become: yes
+  tasks:
+    # 40 = `killall -9 -u $USER` on the user's last job, 42 = per-user cleanup: correct on a pure
+    # compute node, fatal on a node where the same user has an interactive/admin session.
+    - name: disable last-user-job process killers
+      file:
+        path: /etc/slurm/epilog.d/{{ item }}
+        mode: "0644"
+      loop:
+        - 40-lastuserjob-processes
+        - 42-lastuserjob-cleanup
+
+- name: Controller/NFS host as compute node (ldap) - hard caps on all jobs together
+  hosts: ldap
+  become: yes
+  tasks:
+    - name: slurmstepd.scope drop-in (md126 IO 100M/100M, MemoryMax=80G)
+      copy:
+        src: "{{ playbook_dir }}/../files/guardrails/ldap/10-ldap-limits.conf"
+        dest: /etc/systemd/system/slurmstepd.scope.d/10-ldap-limits.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: daemon-reload
+
+    - name: do not let jobs flip the CPU governor on the NFS host
+      file:
+        path: "{{ item }}"
+        mode: "0644"
+      loop:
+        - /etc/slurm/epilog.d/60-exclusive-cpu
+        - /etc/slurm/prolog.d/50-exclusive-cpu
+
+    - name: slurm-raidcheck-guard drains ldap too while md126 checks/rebuilds
+      lineinfile:
+        path: /usr/local/bin/slurm-raidcheck-guard.sh
+        regexp: '^NODES='
+        line: "NODES=\"neuroai[1-5],ldap\"               # compute nodes served by this host's /home"
+
+  handlers:
+    - name: daemon-reload
+      systemd:
+        daemon_reload: yes
