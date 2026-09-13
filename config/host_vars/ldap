@@ -9,8 +9,8 @@
 #    of what jobs request. A local job can otherwise saturate the /home RAID far faster than any
 #    1G NFS client can (2026-09-11 incident).
 # Weight=100 makes the scheduler prefer every other node first.
-# ldap is a member of the `cpu` partition only (short/batch list nodes explicitly), so every job
-# that lands here carries a memory request (cpu has DefMemPerCPU=1024).
+# ldap is a member of the `short` partition only (<= 4 h jobs; batch/gpu/cpu list nodes explicitly),
+# and short has DefMemPerCPU=1024 so every job that lands here carries a memory request.
 slurm_node_features: "cpu_only,sapphirerapids,w7"
 slurm_node_extra: "CoreSpecCount=5 MemSpecLimit=40960 Weight=100"
 # No user SSH restriction on the controller: only admins log in here.

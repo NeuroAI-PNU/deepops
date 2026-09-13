@@ -25,6 +25,15 @@
         - 60-cpu-quota.conf
       notify: daemon-reload
 
+    - name: slurmstepd.scope drop-in (all jobs together <= 56G so the 64G interactive reservation is real)
+      copy:
+        src: "{{ playbook_dir }}/../files/guardrails/neuroai4/10-neuroai4-limits.conf"
+        dest: /etc/systemd/system/slurmstepd.scope.d/10-neuroai4-limits.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: daemon-reload
+
     - name: sshd reads sshd_config.d (2017-era template lacks the Include line)
       lineinfile:
         path: /etc/ssh/sshd_config
