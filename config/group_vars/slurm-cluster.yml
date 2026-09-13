@@ -40,13 +40,13 @@ slurm_partitions:
     priority: 100
   - name: batch
     nodes: "neuroai[1-5]"
-    max_time: "7-00:00:00"
+    max_time: "INFINITE"
     default_time: "1-00:00:00"
     priority: 10
     default: true
   - name: gpu
     nodes: "neuroai1,neuroai2,neuroai3,neuroai5"
-    max_time: "7-00:00:00"
+    max_time: "INFINITE"
     default_time: "1-00:00:00"
     priority: 50
   # gpu_big held neuroai4 while it had the Blackwell cards (removed 2026-08-10).
@@ -54,7 +54,7 @@ slurm_partitions:
   # matching host_vars entries; the gpu_big QOS is still defined below.
   # - name: gpu_big
   #   nodes: "neuroai4"
-  #   max_time: "7-00:00:00"
+  #   max_time: "INFINITE"
   #   default_time: "1-00:00:00"
   #   priority: 60
   #   qos: gpu_big
@@ -62,7 +62,7 @@ slurm_partitions:
   #   comment: "no account restriction here: campus users are capped by QOS quotas (gpu=1,shard=4), not by partition access"
   - name: cpu
     nodes: "neuroai1,neuroai3,neuroai4,neuroai5,ldap"
-    max_time: "7-00:00:00"
+    max_time: "INFINITE"
     default_time: "1-00:00:00"
     priority: 40
     # 2026-09-13: 1 GB/CPU default so MemSpecLimit accounting on ldap/neuroai4 is real.
