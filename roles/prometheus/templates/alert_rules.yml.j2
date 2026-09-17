@@ -1,11 +1,549 @@
+{# Prometheus annotations use Go templating with doubled braces and $labels / $value.
+   Jinja would try to evaluate those and die with "unexpected char '$'", so the whole
+   file is wrapped in raw and emitted verbatim. Keep the wrapper when editing.
+   Validate after changes: promtool check rules <rendered file>. #}
+{% raw %}# NOTE ON ANNOTATIONS (2026-08-29):
+# Zulip's Alertmanager endpoint is called with desc=description, so ONLY the
+# description reaches the chat message - the summary is dropped. The first real
+# alert delivered proved this: it arrived with the guidance text but without the
+# user name or the core count, which is the part you actually need.
+# => Every description below must LEAD with the specifics (who / where / how much)
+#    and be readable on its own. Keep summary for the Prometheus UI.
 groups:
-    - name: default
-      rules:
+  - name: default
+    rules:
       - alert: InstanceDown
         expr: up{job="cluster"} == 0
         for: 5m
         labels:
           severity: critical
         annotations:
-          summary: "Instance down"
-          description: "Something has been down for more than 5 minutes."
+          summary: '{{ $labels.instance }} exporter down'
+          description: >-
+            {{ $labels.instance }} ({{ $labels.module }}) has not been scrapeable for 5+ minutes.
+            Check on that node: systemctl status docker.node-exporter docker.dcgm-exporter
+
+  - name: ldap
+    rules:
+      # 2026-08-04: the head node went down twice while slapd was ALIVE but deferring
+      # binds, so a liveness check would have said "fine". This probe does a real
+      # anonymous bind+search every 30s (/usr/local/bin/ldap-probe.sh) and exports the
+      # result through node_exporter's textfile collector.
+      - alert: LDAPProbeFailing
+        expr: ldap_probe_success == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'slapd is not answering bind+search'
+          description: >-
+            slapd on {{ $labels.instance }} has failed bind+search for 2+ minutes.
+            Every login and NSS lookup in the cluster depends on this.
+            Recovery accounts that do NOT need LDAP: root@ldap, hyunsu_local@ldap.
+
+      - alert: LDAPProbeSlow
+        expr: ldap_probe_duration_seconds > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'slapd bind+search is slow ({{ $value | printf "%.2f" }}s)'
+          description: >-
+            slapd on {{ $labels.instance }} is taking {{ $value | printf "%.2f" }}s per
+            bind+search (normal is ~0.006s), sustained 5+ minutes. This precedes the
+            failure mode where NSS lookups block, sshd cannot finish auth, and
+            MaxStartups fills up - which is how 2026-08-04 became a full outage.
+
+      - alert: LDAPProbeStale
+        expr: time() - node_textfile_mtime_seconds{file="/run/prometheus/ldap_probe.prom"} > 300
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'LDAP probe has stopped updating'
+          description: >-
+            The LDAP probe on {{ $labels.instance }} has not written ldap_probe.prom in
+            5+ minutes, so LDAPProbeFailing and LDAPProbeSlow are silently meaningless.
+            Check: systemctl status ldap-probe.timer ldap-probe.service
+
+  - name: headnode
+    rules:
+      # Why per-user and not a node-wide threshold: this box has 40 cores, so a long
+      # single-threaded Jupyter cell is 2.5% node CPU and no node-level rule would ever
+      # see it. Measured over 16 days the node sat at load1 median 0.01 / max 7.72,
+      # while compute nodes run at load ~10 - so 1 sustained core here is clearly work
+      # that belongs on a compute node, and never happens during editing or git.
+      # 2026-09-11: the node name used to be hard-coded as "(ldap)" here. neuroai4 now
+      # exports this metric too (it is becoming the login node), so the description has
+      # to name {{ $labels.instance }} - Zulip receives ONLY the description, so a wrong
+      # node name there sends the reader to the wrong machine with nothing to correct it.
+      - alert: HeadNodeUserComputing
+        expr: headnode_user_cpu_cores > 1
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $labels.user }} is computing on the login node ({{ $value | printf "%.1f" }} cores, 30m+)'
+          description: >-
+            {{ $labels.user }} has been using {{ $value | printf "%.1f" }} CPU cores on
+            login node {{ $labels.instance }} for 30+ minutes. A login node is for editing,
+            git and job submission; heavy work belongs on a compute node.
+            Send them /home/shared/docs/VSCode-컴퓨트노드-연결.md - salloc first, then
+            attach VS Code to the allocated node.
+
+      - alert: HeadNodeCPUProbeStale
+        expr: time() - node_textfile_mtime_seconds{file="/run/prometheus/headnode_cpu.prom"} > 300
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'login-node CPU probe has stopped updating'
+          description: >-
+            The per-user CPU probe on {{ $labels.instance }} has not written
+            headnode_cpu.prom in 5+ minutes, so HeadNodeUserComputing is silently
+            meaningless. Check: systemctl status headnode-cpu-probe.timer
+
+  - name: slurm
+    rules:
+      # Partition walltime went to INFINITE on 2026-08-31: the 7-day cap was killing
+      # real work (7 MMPBSA/MD jobs cut off mid-calculation in 90 days, two of them
+      # that day) while never protecting against the failure it looked like it did.
+      # A wedged job and a job that genuinely needs 7 days are indistinguishable by
+      # clock. So the cap was replaced by this: watch whether the job does work.
+      #
+      # slurm_job_cpu_cores is DIFFED between probe runs, not a lifetime average -
+      # a job that ran hard for days and then wedged has a healthy average and would
+      # never trip a cumulative check.
+      - alert: SlurmJobStalled
+        expr: slurm_job_cpu_cores < 0.1 and slurm_job_elapsed_seconds > 3600
+        for: 2h
+        labels:
+          severity: warning
+        annotations:
+          summary: 'job {{ $labels.jobid }} ({{ $labels.user }}) is holding {{ $labels.node }} without computing'
+          description: >-
+            Slurm job {{ $labels.jobid }} owned by {{ $labels.user }} has used under 0.1 CPU
+            cores for 2+ hours on {{ $labels.node }}, while still holding its allocation.
+            Since walltime is now unlimited, nothing will reclaim it on its own.
+            Check what it is doing: sacct -j {{ $labels.jobid }} --format=JobID,JobName,Elapsed,State
+            then ask the owner before scancel {{ $labels.jobid }}.
+            A job waiting on I/O can look like this briefly - 2h is meant to exclude that,
+            so if this fires repeatedly on healthy jobs, raise the threshold rather than ignore it.
+
+      - alert: SlurmJobVeryLong
+        expr: slurm_job_elapsed_seconds > 14 * 86400
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: 'job {{ $labels.jobid }} ({{ $labels.user }}) has run over 14 days'
+          description: >-
+            Slurm job {{ $labels.jobid }} owned by {{ $labels.user }} has been running for over
+            14 days on {{ $labels.node }}. This is allowed - walltime is unlimited - and is
+            informational only. Worth a glance that it is still converging and not just stuck
+            in a loop, since nothing will stop it otherwise.
+
+      - alert: SlurmJobsProbeStale
+        expr: time() - node_textfile_mtime_seconds{file="/run/prometheus/slurm_jobs.prom"} > 900
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Slurm job probe has stopped updating'
+          description: >-
+            The Slurm job probe on {{ $labels.instance }} has not written slurm_jobs.prom in
+            15+ minutes, so SlurmJobStalled is silently meaningless - and with walltime
+            unlimited that check is the only thing watching for wedged jobs.
+            Check: systemctl status slurm-jobs-probe.timer slurm-jobs-probe.service
+
+  - name: campus_path
+    rules:
+      # 2026-09-11: "the internet is fine but 10.125 keeps cutting out" was reported and
+      # could not be checked after the fact, because nothing measured that path - the
+      # scrape targets are all 192.168.0.x. The only hard evidence was four sshd preauth
+      # disconnects from 10.125.195.21 on 09-10 09:30-10:11, during which the head node
+      # was idle (disk 8%, load1 2.83, ldap probe 0.01s) - so the fault was in the path.
+      #
+      # 10.125.x leaves via the same default gateway as internet traffic, so lab_router
+      # and internet are probed too: all four degrading together means the lab uplink,
+      # only the campus_* ones means the fault is past our router.
+      - alert: CampusPathDown
+        expr: campus_path_up{role=~"campus_.*"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'campus path to {{ $labels.target }} is down'
+          description: >-
+            The campus network target {{ $labels.target }} ({{ $labels.role }}) has answered
+            no ICMP for 2+ minutes, seen from {{ $labels.instance }}. Off-campus SSH comes in
+            over this path (10.125.195.250:53006), so members on the PNU network cannot reach
+            the cluster while this is firing.
+            Check whether it is us or the campus side: if campus_path_up{role="internet"} is
+            also 0 the lab uplink is down, otherwise the fault is past our router (192.168.0.1)
+            and belongs to the campus network office.
+
+      # This is the rule that catches the actual reported symptom. The complaint was
+      # "오락가락" - intermittent - not a clean outage, and partial loss is invisible to
+      # an up/down check because one echo out of five still answers.
+      - alert: CampusPathLossy
+        expr: campus_path_loss_ratio{role=~"campus_.*"} > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'campus path to {{ $labels.target }} is losing {{ $value | humanizePercentage }} of packets'
+          description: >-
+            The campus network target {{ $labels.target }} ({{ $labels.role }}) has been losing
+            over 10% of ICMP packets for 5+ minutes, seen from {{ $labels.instance }}
+            (baseline measured 2026-09-11 was 0% loss, 0.17-0.38ms). This is the
+            "internal network keeps cutting out" symptom: SSH sessions from the campus range
+            stall and drop while ping still appears to work.
+            Compare campus_path_loss_ratio{role="internet"} - if that is clean, the loss is
+            past our router and is the campus network office's to fix. Cross-check the time
+            against: journalctl -u ssh | grep 'Connection closed by authenticating user'
+
+      - alert: CampusPathProbeStale
+        expr: time() - node_textfile_mtime_seconds{file="/run/prometheus/campus_path.prom"} > 300
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'campus path probe has stopped updating'
+          description: >-
+            The campus path probe on {{ $labels.instance }} has not written campus_path.prom
+            in 5+ minutes, so CampusPathDown and CampusPathLossy are silently meaningless.
+            Check: systemctl status campus-path-probe.timer campus-path-probe.service
+
+  - name: homedir_io
+    rules:
+      # 2026-09-11: saturating md126 is indistinguishable from a network fault from the
+      # outside. /home is NFS-exported to every node, so when this RAID is pinned, sshd
+      # blocks reading authorized_keys and sessions fail to establish while ICMP stays at
+      # 0% loss - which is exactly how a disk problem gets reported as "the network".
+      # A single recursive grep over /home/hyunsu was enough to hold all three spindles
+      # at 98-100% with iowait at 33.6%, so this needs no unusual workload to happen.
+      #
+      # The hour() guard excludes the monthly mdcheck scrub, which runs 00:00-07:00 by
+      # design (mdcheck_continue.timer, deliberately not drained - see slurm-raidcheck-guard).
+      # hour() is UTC while the scrub window is KST: 15-23 UTC = 00-08 KST. The window is
+      # widened an hour past the scrub's nominal 07:00 end because it overruns - a sample at
+      # exactly KST 07:00 / UTC 22:00 sat at 99.6% on 09-05 and would have alerted nightly.
+      - alert: HomeRaidSaturated
+        expr: |
+          avg without (device) (
+            rate(node_disk_io_time_seconds_total{instance="ldap:9100",device=~"sd[abc]"}[5m])
+          ) > 0.9
+          unless on() (hour() >= 15 and hour() < 23)
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: '/home RAID (md126) has been saturated for 15m'
+          description: >-
+            The /home RAID (md126, sda/sdb/sdc on ldap) has been over 90% utilised for 15+
+            minutes outside the nightly scrub window. /home is NFS-exported to all five compute
+            nodes, so this shows up to users as SSH hanging, slow shells and stalled jobs -
+            it looks like a network problem but is not. Normal daytime utilisation is under 10%.
+            Find the cause: ps -eo state,pid,user,comm,args | awk '$1=="D"'
+            and check per-process reads in /proc/<pid>/io. A recursive grep or find over
+            /home is the usual culprit.
+
+  - name: disk_health
+    rules:
+      # 2026-09-11: smartmontools was not installed - the disks holding 13TB of /home
+      # were completely unmonitored. That /home sits on a 3-disk RAID5 (single parity)
+      # with no backup, and the three drives are consecutive serials with identical
+      # power-on hours (20754h), so they are a correlated-failure set: the array
+      # survives one drive, and a second failing during the ~1 day rebuild loses
+      # everything. These rules exist to buy warning time before that.
+      #
+      # smartd is also running but its notifications go to "-m root" - a mailbox
+      # nobody reads. Prometheus -> Zulip is the path that is actually verified to
+      # deliver, so these rules are the real alerting, not smartd.
+      - alert: SmartDiskFailing
+        expr: smart_device_health == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'disk {{ $labels.device }} ({{ $labels.serial }}) reports SMART FAILED'
+          description: >-
+            Disk {{ $labels.device }} ({{ $labels.model }}, serial {{ $labels.serial }}) on
+            {{ $labels.instance }} has failed its SMART overall-health assessment. The drive
+            is predicting its own failure.
+            /home is RAID5 with single parity and NO backup, so losing a second drive during
+            rebuild loses all 13TB. Act now: mdadm --detail /dev/md126 to see array state,
+            and copy irreplaceable data off before replacing anything.
+
+      # Pending sectors are the leading indicator - they show up well before the drive
+      # fails its own health check. On a no-backup RAID5 a single one is worth waking
+      # up for, so there is no "a few are fine" threshold here.
+      - alert: SmartDiskBadSectors
+        expr: smart_reallocated_sectors > 0 or smart_pending_sectors > 0 or smart_offline_uncorrectable > 0
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'disk {{ $labels.device }} has bad sectors ({{ $value }})'
+          description: >-
+            Disk {{ $labels.device }} on {{ $labels.instance }} is reporting {{ $value }}
+            reallocated/pending/uncorrectable sectors, up from zero on all three drives as of
+            2026-09-11. This precedes outright failure and matters more than usual here:
+            /home is single-parity RAID5 with no backup, and its three drives are one batch
+            of the same age, so they tend to fail together.
+            Check which drive and how bad: smartctl -A /dev/{{ $labels.device }}
+            Plan a replacement rather than waiting for SMART FAILED.
+
+      - alert: SmartDiskCrcErrors
+        expr: increase(smart_crc_errors[6h]) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'disk {{ $labels.device }} is accumulating UDMA CRC errors'
+          description: >-
+            Disk {{ $labels.device }} on {{ $labels.instance }} gained UDMA CRC errors in the
+            last 6 hours. This is almost always the cable, connector or backplane rather than
+            the platter, so the drive itself is probably fine - reseat the SATA and power
+            cables before replacing anything. Left alone it degrades throughput and can drop
+            the drive out of the array.
+
+      - alert: SmartDiskTempHigh
+        expr: smart_temperature_celsius{device=~"sd.*"} > 50
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'disk {{ $labels.device }} is at {{ $value }}C'
+          description: >-
+            Disk {{ $labels.device }} on {{ $labels.instance }} has been over 50C for 30+
+            minutes (baseline 2026-09-11 was 32-33C). Sustained heat shortens drive life and
+            these three are already at 20754 power-on hours. Check chassis intake and fans.
+
+      - alert: SmartNvmeWearHigh
+        expr: smart_nvme_percentage_used > 85
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: 'NVMe {{ $labels.device }} has used {{ $value }}% of rated endurance'
+          description: >-
+            NVMe {{ $labels.device }} on {{ $labels.instance }} has consumed {{ $value }}% of
+            its rated write endurance (was 0-1% on 2026-09-11). These two mirror the root
+            filesystem, and being a RAID1 pair of identical age they wear out together.
+            Plan replacement before this reaches 100%.
+
+      - alert: SmartProbeStale
+        expr: time() - node_textfile_mtime_seconds{file="/run/prometheus/smart.prom"} > 3600
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'SMART probe has stopped updating'
+          description: >-
+            The SMART probe on {{ $labels.instance }} has not written smart.prom in an hour,
+            so every disk-health rule above is silently meaningless and the drives are
+            unmonitored again. Check: systemctl status smart-probe.timer smart-probe.service
+
+  - name: login_node_memory
+    rules:
+      # 2026-09-11: neuroai4 is becoming the login node while remaining a compute node,
+      # so a job there can starve interactive logins. CPU is guarded structurally
+      # (CoreSpecCount=2 holds back 4 CPUs that jobs can never be scheduled onto), but
+      # memory is NOT: scontrol reports AllocMem=0 / AllocTRES=cpu=32, i.e. Slurm does
+      # not track job memory at all here. DefMemPerCPU=0 and no job passes --mem, and
+      # cgroup.conf does not exist (ConstrainRAMSpace=no), so a job can take the whole
+      # node. MemSpecLimit would not help - it reserves against an allocation that is
+      # never made.
+      #
+      # Enforcing it properly needs DefMemPerCPU plus ConstrainRAMSpace, sized per node
+      # (neuroai5 has only 946 MB/CPU, so a uniform value would strand 18 of its 32 CPUs).
+      # That was deferred deliberately: 30 days of accounting shows job MaxRSS of
+      # median ~0 / p95 0.97GB / p99 1.91GB / max 2.16GB against 122GB of RAM, so the
+      # realistic risk is a runaway, not normal work. This rule catches the runaway.
+      - alert: LoginNodeMemoryLow
+        expr: |
+          node_memory_MemAvailable_bytes{instance=~"(ldap|neuroai4):9100"}
+          / node_memory_MemTotal_bytes{instance=~"(ldap|neuroai4):9100"} < 0.15
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'login node {{ $labels.instance }} has under 15% memory available'
+          description: >-
+            Login node {{ $labels.instance }} has had under 15% of its memory available for
+            10+ minutes ({{ $value | humanizePercentage }} now). MemAvailable already counts
+            reclaimable page cache, so this is real pressure, not just a warm cache.
+            Interactive logins fail before the host does - that is how 2026-08-04 became two
+            forced power cycles.
+            Slurm does not cap job memory on this cluster (AllocMem=0), so a job can be the
+            cause even though it looks well-behaved to the scheduler.
+            Find it: ps -eo pid,user,rss,comm --sort=-rss | head, and for interactive users
+            compare anon vs file in /sys/fs/cgroup/user.slice/user-<uid>.slice/memory.stat -
+            memory.current alone will mislead you.
+
+  - name: slurm-usage
+    rules:
+      # 2026-09-12: sacct/dcgm existed but nothing joined "who holds a GPU" with
+      # "is it doing anything". slurm-gpu-util-probe.py does the join; this fires
+      # on a whole-card (gres=gpu, not shard - shard cards are shared) allocation
+      # that has averaged <5% util over 2h. Requires the job itself to be >2h old
+      # so a fresh job loading data is not flagged.
+      - alert: GpuIdleAllocation
+        expr: >-
+          avg_over_time(slurm_job_gpu_util{gres="gpu"}[2h]) < 5
+          and on(jobid) slurm_job_elapsed_seconds > 7200
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'idle GPU allocation: job {{ $labels.jobid }} ({{ $labels.user }})'
+          description: >-
+            {{ $labels.user }} job {{ $labels.jobid }} holds GPU {{ $labels.gpu }} on {{ $labels.node }}
+            ({{ $labels.partition }}) with {{ $value | printf "%.1f" }}% average utilisation over the last 2h.
+            The card is exclusively allocated (gres=gpu) so nobody else can use it.
+            Check: scontrol show job -d {{ $labels.jobid }} ; nvidia-smi on {{ $labels.node }}.
+
+      - alert: SlurmUsageProbeStale
+        expr: time() - slurm_usage_probe_timestamp > 900
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'slurm-usage-probe stale'
+          description: >-
+            slurm-usage-probe on {{ $labels.instance }} has not written for 15+ minutes;
+            per-user GPU/CPU usage panels are frozen. Check: systemctl status slurm-usage-probe.timer slurm-usage-probe.service
+
+      - alert: SlurmGpuUtilProbeStale
+        expr: time() - slurm_gpu_util_probe_timestamp > 300
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'slurm-gpu-util-probe stale'
+          description: >-
+            slurm-gpu-util-probe on {{ $labels.instance }} has not written for 5+ minutes, so
+            GpuIdleAllocation is silently blind. Check: systemctl status slurm-gpu-util-probe.timer slurm-gpu-util-probe.service
+
+  - name: login-home-usage
+    rules:
+      - alert: LoginProbeStale
+        expr: time() - login_probe_timestamp > 900
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'login-usage-probe stale'
+          description: >-
+            login-usage-probe on {{ $labels.instance }} has not written for 15+ minutes; SSH login
+            panels are frozen. Check: systemctl status login-usage-probe.timer ; ls /var/log/deepops-hosts/*/$(date +%F)
+
+      # Failures are gauges that reset at midnight, so use the 1h increase of the
+      # gauge (clamped) rather than the raw value.
+      - alert: SshdBruteForce
+        expr: sum by(node, src_class) (clamp_min(delta(sshd_failures_today{kind!="preauth_scan"}[1h]), 0)) > 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'SSH brute force on {{ $labels.node }}'
+          description: >-
+            {{ $labels.node }} saw {{ $value | printf "%.0f" }} failed SSH auth attempts from {{ $labels.src_class }}
+            addresses in the last hour (invalid user names or rejected keys; port scans excluded).
+            Password auth is off so this is noise unless it is a lan/campus source - then find who.
+            Check: sudo grep -E "Invalid user|authenticating user" /var/log/deepops-hosts/{{ $labels.node }}/$(date +%F)/syslog.log | tail
+
+      - alert: HomeUsageProbeStale
+        expr: time() - home_probe_timestamp > 26*3600
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'nightly /home du did not run'
+          description: >-
+            home-usage-probe on {{ $labels.instance }} has no result for 26+ hours (runs 01:30; it skips
+            itself while md126 is resyncing/checking). Check: journalctl -u home-usage-probe --since yesterday ; cat /proc/mdstat
+
+      # 2026-09-13: replaced HomeUserLarge (fired merely for being big; no quota, so size alone is not
+      # actionable). Now alert on DAY-OVER-DAY GROWTH: a directory or the whole /home jumping by a lot
+      # since yesterday's 01:30 du. Thresholds are first guesses (probe is 1 day old) - tune later.
+      - alert: HomeDirGrowthHigh
+        expr: |
+          (home_dir_bytes - home_dir_bytes offset 1d) > 500 * 1024^3
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: '/home/{{ $labels.dir }} grew {{ $value | humanize1024 }}B in a day'
+          description: >-
+            /home/{{ $labels.dir }} (owner {{ $labels.owner }}) grew by {{ $value | humanize1024 }}B since
+            yesterday's du (now {{ with printf "home_dir_bytes{dir=\"%s\"}" $labels.dir | query }}{{ . | first | value | humanize1024 }}B{{ end }}).
+            Shared /home has no quota and no backup; ask what is being written (dataset download, checkpoints, logs?)
+            and whether it can go to node-local scratch. Check: sudo du -sh /home/{{ $labels.dir }}/* | sort -h | tail
+
+      - alert: HomeTotalGrowthHigh
+        expr: |
+          (
+            (node_filesystem_size_bytes{instance="ldap:9100",mountpoint="/home"} - node_filesystem_avail_bytes{instance="ldap:9100",mountpoint="/home"})
+            - (node_filesystem_size_bytes{instance="ldap:9100",mountpoint="/home"} offset 1d - node_filesystem_avail_bytes{instance="ldap:9100",mountpoint="/home"} offset 1d)
+          ) > 1024^4
+          and (node_filesystem_size_bytes{instance="ldap:9100",mountpoint="/home"} offset 1d > 20e12)
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: '/home used space grew {{ $value | humanize1024 }}B in 24h'
+          description: >-
+            /home (ldap md126) used space grew by {{ $value | humanize1024 }}B in the last 24 hours;
+            {{ with query "node_filesystem_avail_bytes{instance=\"ldap:9100\",mountpoint=\"/home\"}" }}{{ . | first | value | humanize1024 }}B{{ end }} remain free.
+            At this rate the RAID fills within days. Find the writer: topk(5, home_dir_bytes - home_dir_bytes offset 1d) in Prometheus
+            (per-directory numbers refresh at 01:30), or on ldap: sudo find /home -xdev -type f -mmin -1440 -size +1G -printf "%u %s %p\n" | sort -k2 -n | tail
+
+  # 2026-09-17: a GROMACS job (name=gmx_mpi) raised "Xid 13 Graphics Exception" plus
+  # "Xid 31 MMU Fault" on neuroai2 at 01:34 and on neuroai1 at 09:38. neuroai2 recovered
+  # by itself; neuroai1 stayed wedged for ~2.5h at util=100% / P0 / 1905MHz / 109W with
+  # ZERO compute processes and 1 MiB of framebuffer in use, burning ~80W for nothing.
+  # Nothing alerted - it surfaced only because a human asked whether nvtop looked normal.
+  # DCGM already exported everything needed; there simply were no rules.
+  # NOTE: DCGM has no "number of compute processes" metric, so FB_USED is the proxy.
+  # A real CUDA process costs 200+ MiB just for its context (the smallest live job measured
+  # on 2026-09-17 held 210 MiB) while the wedged card sat at 1 MiB, so the states separate cleanly.
+  - name: gpu_health
+    rules:
+      - alert: GPUXidError
+        expr: DCGM_FI_DEV_XID_ERRORS > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Xid {{ $labels.err_code }} on {{ $labels.instance }} gpu {{ $labels.gpu }}'
+          description: >-
+            {{ $labels.instance }} GPU {{ $labels.gpu }} ({{ $labels.modelName }}) reported
+            Xid {{ $labels.err_code }} ({{ $labels.err_msg }}).
+            Xid 13 and 31 mean a user job made an illegal GPU memory access, so the job dies and
+            the card can be left spinning. Name the offending process and pid on that node with
+            "sudo dmesg -T | grep Xid".
+            This alert is sticky because DCGM keeps reporting the last Xid until it restarts, so
+            once the fault is handled clear it with "sudo systemctl restart nvidia-dcgm".
+
+      - alert: GPUStuckNoWork
+        expr: DCGM_FI_DEV_GPU_UTIL > 50 and on(instance, gpu) DCGM_FI_DEV_FB_USED < 50
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: '{{ $labels.instance }} gpu {{ $labels.gpu }} busy with no work'
+          description: >-
+            {{ $labels.instance }} GPU {{ $labels.gpu }} ({{ $labels.modelName }}) has reported over
+            50 percent utilisation for 15+ minutes while holding under 50 MiB of GPU memory, so no
+            process is really on the card. It is stuck spinning after a crashed job, usually right
+            after an Xid, and wastes 80W or more. Confirm with nvidia-smi, which will show high
+            utilisation together with "No running processes found".
+            Recovery without rebooting, on that node: drain it with "scontrol update nodename=NODE
+            state=drain", stop docker.dcgm-exporter.service, nvidia-dcgm, nvidia-persistenced and
+            gdm3, then "rmmod nvidia_drm nvidia_modeset nvidia_uvm nvidia" and modprobe them back in
+            reverse order, then restart those services and resume the node. Running CPU jobs survive.
+            On neuroai1 "nvidia-smi -r" is always refused because that A6000 is the boot display GPU.
+{% endraw %}
