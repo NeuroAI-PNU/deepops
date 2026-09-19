@@ -512,6 +512,13 @@ groups:
   # on 2026-09-17 held 210 MiB) while the wedged card sat at 1 MiB, so the states separate cleanly.
   - name: gpu_health
     rules:
+      # 2026-09-19: the first delivered messages buried the fix in prose, so the
+      # reader had to reconstruct which host to ssh to and which units to restart.
+      # description is now a literal block (|-) so newlines survive into Zulip, the
+      # host is derived from the instance label, and each command is a backticked
+      # one-liner that can be copied as-is. Restarting nvidia-dcgm alone is not
+      # enough: dcgm-exporter holds its connection to nv-hostengine and keeps
+      # serving the stale Xid until it reconnects, so both units must restart.
       - alert: GPUXidError
         expr: DCGM_FI_DEV_XID_ERRORS > 0
         for: 2m
@@ -519,14 +526,16 @@ groups:
           severity: critical
         annotations:
           summary: 'Xid {{ $labels.err_code }} on {{ $labels.instance }} gpu {{ $labels.gpu }}'
-          description: >-
-            {{ $labels.instance }} GPU {{ $labels.gpu }} ({{ $labels.modelName }}) reported
-            Xid {{ $labels.err_code }} ({{ $labels.err_msg }}).
-            Xid 13 and 31 mean a user job made an illegal GPU memory access, so the job dies and
-            the card can be left spinning. Name the offending process and pid on that node with
-            "sudo dmesg -T | grep Xid".
-            This alert is sticky because DCGM keeps reporting the last Xid until it restarts, so
-            once the fault is handled clear it with "sudo systemctl restart nvidia-dcgm".
+          description: |-
+            {{ $labels.instance }} GPU {{ $labels.gpu }} ({{ $labels.modelName }}) reported Xid {{ $labels.err_code }} ({{ $labels.err_msg }}).
+
+            Xid 13 and 31 mean a user job made an illegal GPU memory access. The job dies, and the card is sometimes left spinning at 100% with no process on it.
+
+            Name the offending process and pid:
+            `ssh {{ reReplaceAll ":[0-9]+" "" $labels.instance }} "sudo dmesg -T | grep Xid"`
+
+            This alert is sticky: DCGM keeps reporting the last Xid until it restarts. After the fault is handled, clear it with:
+            `ssh {{ reReplaceAll ":[0-9]+" "" $labels.instance }} "sudo systemctl restart nvidia-dcgm docker.dcgm-exporter.service"`
 
       - alert: GPUStuckNoWork
         expr: DCGM_FI_DEV_GPU_UTIL > 50 and on(instance, gpu) DCGM_FI_DEV_FB_USED < 50
@@ -535,15 +544,21 @@ groups:
           severity: critical
         annotations:
           summary: '{{ $labels.instance }} gpu {{ $labels.gpu }} busy with no work'
-          description: >-
-            {{ $labels.instance }} GPU {{ $labels.gpu }} ({{ $labels.modelName }}) has reported over
-            50 percent utilisation for 15+ minutes while holding under 50 MiB of GPU memory, so no
-            process is really on the card. It is stuck spinning after a crashed job, usually right
-            after an Xid, and wastes 80W or more. Confirm with nvidia-smi, which will show high
-            utilisation together with "No running processes found".
-            Recovery without rebooting, on that node: drain it with "scontrol update nodename=NODE
-            state=drain", stop docker.dcgm-exporter.service, nvidia-dcgm, nvidia-persistenced and
-            gdm3, then "rmmod nvidia_drm nvidia_modeset nvidia_uvm nvidia" and modprobe them back in
-            reverse order, then restart those services and resume the node. Running CPU jobs survive.
-            On neuroai1 "nvidia-smi -r" is always refused because that A6000 is the boot display GPU.
+          description: |-
+            {{ $labels.instance }} GPU {{ $labels.gpu }} ({{ $labels.modelName }}) has reported over 50 percent utilisation for 15+ minutes while holding under 50 MiB of GPU memory, so nothing is really running on it. It is stuck spinning after a crashed job, usually right after an Xid, and wastes 80W or more.
+
+            Confirm (high utilisation plus "No running processes found"):
+            `ssh {{ reReplaceAll ":[0-9]+" "" $labels.instance }} nvidia-smi`
+
+            Recover without rebooting. Drain first, from the head node:
+            `scontrol update nodename={{ reReplaceAll ":[0-9]+" "" $labels.instance }} state=drain reason="gpu wedged"`
+
+            Then reload the driver on the node. Running CPU jobs survive this:
+            `ssh root@{{ reReplaceAll ":[0-9]+" "" $labels.instance }} "bash /usr/local/bin/gpu-recover.sh"`
+
+            Healthy afterwards is 0%, P8, 210 MHz, about 30 W. Then resume:
+            `scontrol update nodename={{ reReplaceAll ":[0-9]+" "" $labels.instance }} state=resume`
+
+            Note: on neuroai1 "nvidia-smi -r" is always refused because that A6000 is the boot display GPU, which is why the script unloads and reloads the kernel modules instead.
+
 {% endraw %}
