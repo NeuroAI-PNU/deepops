@@ -561,4 +561,57 @@ groups:
 
             Note: on neuroai1 "nvidia-smi -r" is always refused because that A6000 is the boot display GPU, which is why the script unloads and reloads the kernel modules instead.
 
+
+  # 2026-09-19: neuroai5 (i9-13900KF, non-ECC) kernel-panicked at 07:17 with
+  # "mce: CPUs not responding to MCE broadcast" after 15.6 days of uptime. The node
+  # was idle and no job was lost, but nothing alerted - it surfaced only because a
+  # human noticed the boot time had changed. rasdaemon is now installed on all six
+  # nodes, and node_exporter already exported EDAC counters that nobody watched.
+  # NOTE: neuroai4 and neuroai5 have non-ECC memory, so their EDAC counters stay at
+  # zero by construction. For those two the reboot rule is the only signal.
+  - name: hardware_health
+    rules:
+      - alert: NodeRebooted
+        expr: time() - node_boot_time_seconds < 900
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ reReplaceAll \":[0-9]+\" \"\" $labels.instance }} rebooted"
+          description: |-
+            {{ reReplaceAll ":[0-9]+" "" $labels.instance }} has been up for under 15 minutes, so it rebooted just now.
+
+            If this was not a planned maintenance reboot, find out why. An unclean crash leaves no shutdown record, and often a panic dump:
+            `ssh {{ reReplaceAll ":[0-9]+" "" $labels.instance }} "last -x -n3 reboot shutdown; sudo ls /var/lib/systemd/pstore/*/"`
+
+            A dmesg.txt under /var/lib/systemd/pstore means the kernel panicked and saved its log to EFI storage. Read it for the cause:
+            `ssh {{ reReplaceAll ":[0-9]+" "" $labels.instance }} "sudo grep -E 'Kernel panic|mce|Oops|BUG:' /var/lib/systemd/pstore/*/dmesg.txt"`
+
+            This alert clears by itself 15 minutes after boot.
+
+      - alert: MemoryUncorrectableErrors
+        expr: increase(node_edac_uncorrectable_errors_total[1h]) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ reReplaceAll \":[0-9]+\" \"\" $labels.instance }} uncorrectable memory error"
+          description: |-
+            {{ reReplaceAll ":[0-9]+" "" $labels.instance }} memory controller {{ $labels.controller }} logged an UNCORRECTABLE error in the last hour. ECC could not repair it, so data was lost or the machine panicked.
+
+            Identify the DIMM and plan to replace it. Drain the node first:
+            `ssh {{ reReplaceAll ":[0-9]+" "" $labels.instance }} "sudo ras-mc-ctl --error-count; sudo ras-mc-ctl --summary"`
+
+      - alert: MemoryCorrectableErrors
+        expr: increase(node_edac_correctable_errors_total[6h]) > 10
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ reReplaceAll \":[0-9]+\" \"\" $labels.instance }} correctable memory errors"
+          description: |-
+            {{ reReplaceAll ":[0-9]+" "" $labels.instance }} memory controller {{ $labels.controller }} corrected more than 10 errors in the last 6 hours. ECC is holding, so nothing is broken yet, but a DIMM that starts correcting usually gets worse.
+
+            See which DIMM it is and how fast the count climbs:
+            `ssh {{ reReplaceAll ":[0-9]+" "" $labels.instance }} "sudo ras-mc-ctl --error-count"`
 {% endraw %}
