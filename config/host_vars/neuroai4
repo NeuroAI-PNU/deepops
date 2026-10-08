@@ -15,3 +15,7 @@ slurm_node_extra: "CoreSpecCount=6 MemSpecLimit=65536"
 # cgroup-v2 crash path with 2+ jobs of the same user on the node.
 slurm_enable_pam_slurm_adopt: false
 slurm_restrict_node_access: false
+
+# ufw (config/playbooks/security-baseline.yml): web served to the outside; lab_wiki on 8080 stays
+# lab-internal (covered by the lab-network allow rule).
+security_public_tcp_ports: ["80", "443"]

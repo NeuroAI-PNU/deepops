@@ -1,0 +1,175 @@
+---
+# Site playbook (NeuroAI cluster): security baseline applied by hand on 2026-10-07..08.
+#
+#   - unattended-upgrades: security pockets daily, no auto reboot; kernel/GPU/Slurm/munge are
+#     blacklisted and go through the monthly drain -> upgrade -> reboot instead.
+#   - sshd: key-only, root key-only (sshd_config.d/00-* wins over later files and the main config).
+#   - ufw: deny incoming; 22/tcp from anywhere; everything from the lab networks; per-host public
+#     ports from `security_public_tcp_ports` (host_vars).
+#   - fail2ban (sshd jail) on neuroai4 only - the one host whose SSH is port-forwarded from outside.
+#   - leftover Ubuntu slurm 21.08 packages removed (the live Slurm is the 22.05.2 build in /usr/local).
+#   - neuroai1: NIC matched by MAC (6.8 HWE kernel renamed enp4s0f2 -> enp4s0f2np2) + DNS drop-in.
+#
+# Run:  ansible-playbook -i config/inventory config/playbooks/security-baseline.yml
+# Needs community.general (config/requirements.yml). Safe to re-run: rules are only added, never
+# reset. sshd is reloaded after a validated change; netplan is generated but NOT applied (takes
+# effect on the next boot, so a bad file cannot cut the running session).
+#
+# Not in this repo: Ubuntu Pro tokens (ldap, neuroai1-4 attached by hand; neuroai5 is the 6th host
+# and over the free 5-machine limit).
+
+- name: Security baseline - all cluster hosts
+  hosts: all
+  become: yes
+  vars:
+    security_lab_networks:
+      - 192.168.0.0/24   # node LAN
+      - 10.125.0.0/16    # campus
+      - 172.17.0.0/16    # docker0
+  tasks:
+    - name: unattended-upgrades installed
+      apt:
+        name: unattended-upgrades
+        state: present
+
+    - name: unattended-upgrades config
+      copy:
+        src: "{{ playbook_dir }}/../files/security/{{ item }}"
+        dest: /etc/apt/apt.conf.d/{{ item }}
+        owner: root
+        group: root
+        mode: "0644"
+      loop:
+        - 20auto-upgrades
+        - 52neuroai-unattended
+
+    - name: sshd hardening drop-in
+      copy:
+        src: "{{ playbook_dir }}/../files/security/00-neuroai-hardening.conf"
+        dest: /etc/ssh/sshd_config.d/00-neuroai-hardening.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: reload sshd
+
+    # cloud-init on neuroai5 writes PasswordAuthentication yes into 50-cloud-init.conf.
+    - name: neutralise cloud-init password login
+      lineinfile:
+        path: /etc/ssh/sshd_config.d/50-cloud-init.conf
+        regexp: '^PasswordAuthentication yes'
+        line: "#PasswordAuthentication yes"
+      failed_when: false
+      notify: reload sshd
+
+    - name: ufw - allow ssh from anywhere
+      community.general.ufw:
+        rule: allow
+        port: "22"
+        proto: tcp
+        comment: ssh
+
+    - name: ufw - allow everything from lab networks
+      community.general.ufw:
+        rule: allow
+        from_ip: "{{ item }}"
+        comment: lab internal
+      loop: "{{ security_lab_networks }}"
+
+    - name: ufw - per-host public ports
+      community.general.ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+        comment: public
+      loop: "{{ security_public_tcp_ports | default([]) }}"
+
+    - name: ufw - default deny incoming, enabled
+      community.general.ufw:
+        state: enabled
+        direction: incoming
+        policy: deny
+
+    # neuroai1 keeps libslurm37 + slurm-wlm-basic-plugins: mpich/libmpich-dev depend on them.
+    - name: remove unused Ubuntu slurm 21.08 packages
+      apt:
+        name:
+          - slurm-client
+          - slurm-wlm-doc
+        state: absent
+
+  handlers:
+    - name: reload sshd
+      command: /usr/sbin/sshd -t
+      notify: reload ssh service
+
+    - name: reload ssh service
+      systemd:
+        name: ssh
+        state: reloaded
+
+- name: Externally reachable SSH (neuroai4) - fail2ban
+  hosts: neuroai4
+  become: yes
+  tasks:
+    - name: fail2ban installed
+      apt:
+        name: fail2ban
+        state: present
+
+    - name: fail2ban jail (lab networks never banned)
+      copy:
+        src: "{{ playbook_dir }}/../files/security/fail2ban-neuroai.local"
+        dest: /etc/fail2ban/jail.d/neuroai.local
+        owner: root
+        group: root
+        mode: "0644"
+      notify: restart fail2ban
+
+    - name: fail2ban running
+      systemd:
+        name: fail2ban
+        enabled: yes
+        state: started
+
+  handlers:
+    - name: restart fail2ban
+      systemd:
+        name: fail2ban
+        state: restarted
+
+- name: neuroai1 - NIC by MAC + DNS after the 6.8 kernel rename
+  hosts: neuroai1
+  become: yes
+  tasks:
+    - name: netplan matched by MAC, NetworkManager renderer
+      copy:
+        src: "{{ playbook_dir }}/../files/security/neuroai1/01-netcfg.yaml"
+        dest: /etc/netplan/01-netcfg.yaml
+        owner: root
+        group: root
+        mode: "0600"
+      notify: netplan generate
+
+    - name: resolved.conf.d exists
+      file:
+        path: /etc/systemd/resolved.conf.d
+        state: directory
+        mode: "0755"
+
+    - name: resolved.conf.d DNS drop-in
+      copy:
+        src: "{{ playbook_dir }}/../files/security/neuroai1/neuroai-dns.conf"
+        dest: /etc/systemd/resolved.conf.d/neuroai-dns.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: restart resolved
+
+  handlers:
+    - name: netplan generate
+      command: netplan generate
+
+    - name: restart resolved
+      systemd:
+        name: systemd-resolved
+        state: restarted

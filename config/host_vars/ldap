@@ -16,3 +16,7 @@ slurm_node_extra: "CoreSpecCount=5 MemSpecLimit=40960 Weight=100"
 # No user SSH restriction on the controller: only admins log in here.
 slurm_enable_pam_slurm_adopt: false
 slurm_restrict_node_access: false
+
+# ufw (config/playbooks/security-baseline.yml): grafana 3000, prometheus 9090, https 443 and LDAP
+# 389 (StartTLS) are reachable from outside the lab networks (decided 2026-10-08).
+security_public_tcp_ports: ["3000", "9090", "443", "389"]

@@ -1,0 +1,12 @@
+# 2026-10-07: match by MAC (6.8 kernel renamed enp4s0f2 -> enp4s0f2np2); NM owns the link.
+# Backup: /root/netplan-backup-20261007
+network:
+  version: 2
+  renderer: NetworkManager
+  ethernets:
+    lan0:
+      match:
+        macaddress: "80:e8:2c:e4:ae:2c"
+      dhcp4: true
+      nameservers:
+        addresses: [164.125.9.2, 164.125.5.53]

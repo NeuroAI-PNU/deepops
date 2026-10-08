@@ -1,0 +1,12 @@
+// neuroai: security only, no auto reboot (monthly manual reboot), GPU/Slurm excluded (2026-10-07)
+Unattended-Upgrade::Package-Blacklist {
+    "nvidia-";
+    "libnvidia-";
+    "cuda-";
+    "slurm";
+    "libslurm";
+    "munge";
+    "linux-";
+};
+Unattended-Upgrade::Automatic-Reboot "false";
+Unattended-Upgrade::Remove-Unused-Kernel-Packages "false";

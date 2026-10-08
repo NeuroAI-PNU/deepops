@@ -3,4 +3,5 @@
 # https://docs.ansible.com/ansible/latest/galaxy/user_guide.html
 ---
 collections:
+  - name: community.general   # ufw module, config/playbooks/security-baseline.yml
 roles:
