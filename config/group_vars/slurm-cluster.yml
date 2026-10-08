@@ -242,12 +242,11 @@ slurm_install_hpcsdk: true
 # Select the version of HPC SDK to download
 hpcsdk_major_version: "25"
 hpcsdk_minor_version: "7"
-hpcsdk_file_cuda: "11.8"
+# after hpcsdk version 23. cuda version 11.8 supported with multi postfix
+hpcsdk_file_cuda: "multi"
 hpcsdk_arch: "x86_64"
 
 hpcsdk_install_dir: "{{ sm_prefix }}/hpc-sdk"
-# after hpcsdk version 23. cuda version 11.8 supported with multi postfix
-hpcsdk_file_cuda : "multi"
 # In a Slurm cluster, default to setting up HPC SDK as modules rather than in
 # the default user environment
 hpcsdk_install_as_modules: true
