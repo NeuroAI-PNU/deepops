@@ -18,3 +18,6 @@ slurm_gpu_shards: 4
 #  - local admin hyunsu_local (uid 1000) lives in /home0 like on neuroai4, so the NFS /home cannot hide it
 #  - Slurm 22.05.2 binaries copied from neuroai5's /usr/local build; gres.conf = nvml + 4 shards per GPU
 #  - security-baseline.yml items, node/dcgm exporters, rsyslog -> ldap, rasdaemon, cpupower=performance
+
+# Blackwell needs DCGM 4.x; the role default "datacenter-gpu-manager" is the 3.x line (other nodes: 3.3.9).
+dcgm_pkg_name: "datacenter-gpu-manager-4-cuda12"

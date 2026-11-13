@@ -117,7 +117,23 @@ slurm_accounts:
       - seoyul
 
 # Ensure hosts file generation only runs across slurm cluster
+# Live value since before 2026-09 (role default is 1): a node that was DOWN for any reason,
+# including "Not responding" after a reboot, returns to service once slurmd registers with a
+# valid config. Matches /etc/slurm/slurm.conf on all nodes.
+slurm_return_to_service: 2
+
 hosts_add_ansible_managed_hosts_groups: ["slurm-cluster"]
+# Lenovo XClarity (neuroai6) exposes a LAN-over-USB NIC to the OS (enx..., 172.20.95.120) that only
+# reaches its own BMC. Without this the hosts role writes that address into every node's /etc/hosts.
+hosts_exclude_interfaces:
+  - lo
+  - docker
+  - nodelocaldns
+  - enx
+# BMCs, reachable on the lab LAN only.
+hosts_entries:
+  - name: neuroai6-xcc
+    ip: 192.168.0.107
 
 # Enable Slurm high-availability mode
 # NOTE: The location for Slurm saved state needs to reside in a location shared by all Slurm controller nodes

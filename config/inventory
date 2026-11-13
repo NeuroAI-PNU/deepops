@@ -96,8 +96,9 @@ slurm-login
 # SSH User
 ansible_user=hyunsu
 ansible_ssh_private_key_file='~/.ssh/id_rsa'
-become=yes
-become_user=hyunsu
-become_method=sudo
+# Privilege escalation: the playbooks set `become: yes` themselves and escalate to root.
+# The bare `become=yes` / `become_user=hyunsu` / `become_method=sudo` lines that used to be here
+# were never ansible variables (inventory needs the ansible_ prefix), so ansible ignored them with a
+# "reserved name" warning. Removed 2026-11-13; behaviour is unchanged (checked: -b -> root on all hosts).
 # SSH bastion/jumpbox
 #ansible_ssh_common_args='-o ProxyCommand="ssh -W %h:%p -q ubuntu@10.0.0.1"'
