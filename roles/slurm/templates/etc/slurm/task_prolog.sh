@@ -9,4 +9,8 @@ if scontrol show job "$jobid" 2>/dev/null | grep -qiE 'gres[:/]shard'; then
     echo "export CUDA_MPS_PIPE_DIRECTORY=/dev/shm/nvidia-mps-${uid}"
     echo "export CUDA_MPS_LOG_DIRECTORY=/dev/shm/nvidia-mps-log-${uid}"
 fi
+# Node-local scratch (neuroai6): prolog.d/20-scratch-jobdir created /scratch/<user>/<jobid>.
+if [ -d "/scratch/$(id -un)/$jobid" ]; then
+    echo "export SCRATCH_JOB=/scratch/$(id -un)/$jobid"
+fi
 exit 0

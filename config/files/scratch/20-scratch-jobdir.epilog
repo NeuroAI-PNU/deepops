@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Remove this job's /scratch/<user>/<jobid>. Copy results back to /home inside the job script.
+# Never fails the epilog (a failing epilog drains the node).
+u="${SLURM_JOB_USER:-}"; j="${SLURM_JOB_ID:-}"
+[[ -n "$u" && "$u" != root && "$j" =~ ^[0-9]+$ ]] || exit 0
+d="/scratch/$u/$j"
+[[ -d "$d" && ! -L "$d" ]] && rm -rf --one-file-system -- "$d"
+logger -t slurm-epilog "scratch: removed $d"
+exit 0

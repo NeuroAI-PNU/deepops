@@ -1,0 +1,9 @@
+[Unit]
+Description=Expire old files on node-local /scratch
+ConditionPathIsMountPoint=/scratch
+
+[Service]
+Type=oneshot
+Nice=19
+IOSchedulingClass=idle
+ExecStart=/usr/local/sbin/scratch-cleanup.sh
