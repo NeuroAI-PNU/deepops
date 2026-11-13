@@ -1,0 +1,20 @@
+---
+# Lenovo ThinkSystem SR650a V4 (delivered 2026-11-13): 2x Xeon 6737P (2x32 cores, SMT),
+# 256 GB, 2x NVIDIA RTX PRO 6000 Blackwell Server Edition 96 GB (passive, 600 W),
+# RAID 940-16i with 2x 7.68 TB NVMe in RAID1 -> / (200 G) + /scratch (~6.8 T).
+# XClarity Controller (BMC) at 192.168.0.107 (neuroai6-xcc), lab network only.
+#
+# Blackwell needs the OPEN kernel modules: nvidia-driver-580-server-open (Ubuntu repo,
+# same 580.178.04 as the other nodes) and DCGM 4.x (datacenter-gpu-manager-4-cuda12).
+slurm_node_features: "rtxpro6000,blackwell,vram96,shard"
+# shards per GPU (node total = GPU count * this): 4 -> 24 GB each, same granularity as the 4090/A6000 nodes
+slurm_gpu_shards: 4
+
+# Applied by hand on 2026-11-13 (no ansible in the cluster), mirroring neuroai5 unless noted:
+#  - apt pin config/files/neuroai6/apt-preferences-nvidia-driver-from-ubuntu
+#    -> /etc/apt/preferences.d/nvidia-driver-from-ubuntu (CUDA repo must not replace the driver or dkms)
+#  - CUDA 12.9 toolkit, datacenter-gpu-manager-4-cuda12 (4.8), nvidia-container-toolkit, docker-ce
+#  - LDAP/NSS/PAM files copied verbatim from neuroai5; /etc/localusers = root, hyunsu, hyunsu_local
+#  - local admin hyunsu_local (uid 1000) lives in /home0 like on neuroai4, so the NFS /home cannot hide it
+#  - Slurm 22.05.2 binaries copied from neuroai5's /usr/local build; gres.conf = nvml + 4 shards per GPU
+#  - security-baseline.yml items, node/dcgm exporters, rsyslog -> ldap, rasdaemon, cpupower=performance

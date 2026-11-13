@@ -1,0 +1,11 @@
+# Driver comes from the Ubuntu repo (nvidia-driver-580-server-open, same 580.178.04 as the rest of the
+# cluster). Never let the CUDA repo swap it. Container toolkit / DCGM / CUDA from that repo are fine.
+Package: nvidia-driver-* nvidia-dkms-* nvidia-kernel-* nvidia-utils-* nvidia-compute-utils-* libnvidia-compute-* libnvidia-decode-* libnvidia-encode-* libnvidia-extra-* libnvidia-fbc1-* libnvidia-gl-* libnvidia-cfg1-* libnvidia-common-* nvidia-firmware-* xserver-xorg-video-nvidia-* cuda-drivers* nvidia-open* nvidia-fabricmanager*
+Pin: origin developer.download.nvidia.com
+Pin-Priority: -1
+
+# The CUDA repo also ships newer dkms / nvidia-settings builds; keep Ubuntu's so DKMS rebuilds of the
+# driver use the same toolchain as the rest of the cluster.
+Package: dkms nvidia-settings libxnvctrl0 libnvidia-egl-wayland1
+Pin: origin developer.download.nvidia.com
+Pin-Priority: -1
