@@ -614,4 +614,77 @@ groups:
 
             See which DIMM it is and how fast the count climbs:
             `ssh {{ reReplaceAll ":[0-9]+" "" $labels.instance }} "sudo ras-mc-ctl --error-count"`
+
+  # 2026-11-13: BMC (Lenovo XClarity) health via Redfish - /usr/local/bin/xcc-redfish-probe.py on ldap,
+  # one /etc/xcc-probe/<node>.conf per BMC. Covers what the OS cannot see: neuroai6's NVMe drives sit
+  # behind a RAID 940-16i (no smartctl), plus fans, PSUs and temperatures.
+  - name: bmc_health
+    rules:
+      - alert: BmcComponentCritical
+        expr: xcc_health >= 2
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.node }} {{ $labels.kind }} {{ $labels.name }} critical (BMC)"
+          description: |-
+            {{ $labels.node }}: BMC reports {{ $labels.kind }} "{{ $labels.name }}" as CRITICAL.
+
+            For a drive or RAID volume: the RAID1 may be running on one disk - order the replacement now and do not reboot until it is in. For a PSU: the server is on its last power supply. Details and the event log: XClarity web UI https://{{ $labels.node }}-xcc (lab LAN only).
+
+      - alert: BmcComponentWarning
+        expr: xcc_health == 1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.node }} {{ $labels.kind }} {{ $labels.name }} warning (BMC)"
+          description: |-
+            {{ $labels.node }}: BMC reports {{ $labels.kind }} "{{ $labels.name }}" in WARNING for 15 minutes.
+
+            Check the XClarity event log: https://{{ $labels.node }}-xcc (lab LAN only). A RAID volume in Warning is usually degraded or rebuilding.
+
+      - alert: BmcDriveFailurePredicted
+        expr: xcc_drive_failure_predicted == 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.node }} drive {{ $labels.name }} predicts failure"
+          description: |-
+            {{ $labels.node }}: drive "{{ $labels.name }}" predicts its own failure (BMC Redfish FailurePredicted). It still works, but replace it before it dies - the RAID1 survives one drive, not two.
+
+      - alert: BmcDriveWearHigh
+        expr: xcc_drive_life_left_percent < 20
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.node }} drive {{ $labels.name }} {{ $value }}% life left"
+          description: |-
+            {{ $labels.node }}: SSD "{{ $labels.name }}" has {{ $value }}% of its rated endurance left. Plan a replacement.
+
+      - alert: BmcProbeFailing
+        expr: xcc_probe_success == 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.node }} BMC not answering Redfish"
+          description: |-
+            {{ $labels.node }}: the XClarity BMC has not answered Redfish for 15 minutes, so its hardware health is not being watched.
+
+            `ssh ldap "sudo systemctl start xcc-redfish-probe; sudo journalctl -u xcc-redfish-probe -n 5"`
+
+      - alert: BmcProbeStale
+        expr: time() - xcc_probe_timestamp > 1800
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.node }} BMC probe stale"
+          description: |-
+            {{ $labels.node }}: xcc-redfish-probe on ldap has written no result for 30+ minutes (timer stopped?), so BMC alerts are silent.
+
+            `ssh ldap "systemctl list-timers xcc-redfish-probe.timer; sudo journalctl -u xcc-redfish-probe -n 5"`
 {% endraw %}

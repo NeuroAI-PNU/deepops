@@ -1,0 +1,7 @@
+[Unit]
+Description=BMC (XClarity) Redfish health -> Prometheus textfile
+ConditionDirectoryNotEmpty=/etc/xcc-probe
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/xcc-redfish-probe.py

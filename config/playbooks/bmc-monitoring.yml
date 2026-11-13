@@ -1,0 +1,44 @@
+---
+# BMC (Lenovo XClarity) hardware health -> Prometheus -> Zulip (2026-11-13, neuroai6).
+# The probe runs on the monitoring host and polls each BMC's Redfish API every 5 minutes; alert rules
+# live in roles/prometheus/templates/alert_rules.yml.j2 (group bmc_health).
+#
+# Credentials are NOT in this repo. Per BMC, create a read-only account in the XClarity web UI and put
+#   bmc=<ip>\nuser=<name>\npassword=<pw>
+# into /etc/xcc-probe/<node>.conf on the monitoring host (root 0600). The service is skipped while
+# /etc/xcc-probe is empty.
+- name: BMC Redfish probe
+  hosts: slurm-master
+  become: yes
+  tasks:
+    - name: probe script
+      copy:
+        src: "{{ playbook_dir }}/../files/monitoring/xcc-redfish-probe.py"
+        dest: /usr/local/bin/xcc-redfish-probe.py
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: credentials directory
+      file:
+        path: /etc/xcc-probe
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: service and timer
+      copy:
+        src: "{{ playbook_dir }}/../files/monitoring/{{ item }}"
+        dest: "/etc/systemd/system/{{ item }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop: [xcc-redfish-probe.service, xcc-redfish-probe.timer]
+
+    - name: timer enabled
+      systemd:
+        name: xcc-redfish-probe.timer
+        enabled: yes
+        state: started
+        daemon_reload: yes
