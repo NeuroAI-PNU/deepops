@@ -57,11 +57,13 @@ def health(obj):
 def probe(node, cfg):
     b = Bmc(cfg["bmc"], cfg["user"], cfg["password"])
     out = []
+    seen = {}   # (kind, name) -> worst health; XCC lists the RAID card both as Storage and as
+                # its StorageController under the same name, and duplicate series break the textfile.
 
     def add(kind, name, obj):
         h = health(obj)
         if h is not None:
-            out.append("xcc_health%s %d" % (lbl(node=node, kind=kind, name=name), h))
+            seen[(kind, name)] = max(h, seen.get((kind, name), 0))
 
     for sysobj in b.members("/redfish/v1/Systems"):
         add("system", sysobj.get("Id", "system"), sysobj)
@@ -101,7 +103,7 @@ def probe(node, cfg):
         if pw:
             for p in b.get(pw).get("PowerSupplies", []):
                 add("psu", p.get("Name") or p.get("MemberId"), p)
-    return out
+    return ["xcc_health%s %d" % (lbl(node=node, kind=k, name=n), h) for (k, n), h in seen.items()] + out
 
 
 def main():
