@@ -1,0 +1,19 @@
+# neuroai6: cap each RTX PRO 6000 Blackwell at 400 W (default 600 W) to keep fan noise down.
+# Measured 2026-11-14 with both GPUs at full tensor load:
+#   600 W: fans ~18,600 rpm, server 2,132 W, ~395 TFLOPS/GPU  (~73-78 dB at 1 m)
+#   400 W: fans  ~7,500 rpm, server 1,140 W, ~303 TFLOPS/GPU  (77 %, ~59 dB)
+#   300 W: fans  ~6,100 rpm (= idle), server 924 W, ~233 TFLOPS/GPU (59 %)
+# Change GPU_POWER_LIMIT_W below (300..600) and `systemctl restart nvidia-power-limit`.
+[Unit]
+Description=Cap NVIDIA GPU power limit (fan noise)
+After=nvidia-persistenced.service
+Wants=nvidia-persistenced.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=GPU_POWER_LIMIT_W=400
+ExecStart=/usr/bin/nvidia-smi -pl ${GPU_POWER_LIMIT_W}
+
+[Install]
+WantedBy=multi-user.target

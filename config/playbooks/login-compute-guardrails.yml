@@ -156,3 +156,24 @@
       loop:
         - /etc/slurm/epilog.d/60-exclusive-cpu
         - /etc/slurm/prolog.d/50-exclusive-cpu
+
+# neuroai6 fan noise (2026-11-14): both Blackwells at 600 W ran the fans at ~18,600 rpm (~2.1 kW).
+# 400 W per GPU keeps ~77 % of tensor throughput with fans at ~7,500 rpm. Value lives in the unit file.
+- name: neuroai6 - GPU power limit
+  hosts: neuroai6
+  become: yes
+  tasks:
+    - name: power-limit unit
+      copy:
+        src: "{{ playbook_dir }}/../files/neuroai6/nvidia-power-limit.service"
+        dest: /etc/systemd/system/nvidia-power-limit.service
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: power-limit unit enabled and applied
+      systemd:
+        name: nvidia-power-limit
+        enabled: yes
+        state: started
+        daemon_reload: yes
