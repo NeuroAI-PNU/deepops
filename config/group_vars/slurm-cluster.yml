@@ -65,7 +65,16 @@ slurm_partitions:
     priority: 60
     qos: gpu_big
     extra: "DefCpuPerGPU=2 AllowAccounts=compute-account,root"
-    comment: "2026-11-14: lab only; campus reaches the Blackwells via short (<= 4 h, 1 GPU)"
+    comment: "2026-11-14: lab only; campus uses gpu_big_campus"
+  # Same node for campus: QOS caps the whole account at 1 Blackwell, and Priority 20 < 60 puts it in a
+  # lower PriorityTier so pending lab jobs on neuroai6 go first.
+  - name: gpu_big_campus
+    nodes: "neuroai6"
+    max_time: "INFINITE"
+    default_time: "1-00:00:00"
+    priority: 20
+    qos: gpu_big_campus
+    extra: "DefCpuPerGPU=2 AllowAccounts=campus,root"
   - name: cpu
     nodes: "neuroai1,neuroai3,neuroai5"
     max_time: "INFINITE"
@@ -86,11 +95,15 @@ slurm_qos:
   - name: gpu_big
     description: "gpu_big: max 1 gpu per user"
     settings: "MaxTRESPerUser=gres/gpu=1,gres/shard=4"
-  # Partition QOS of `short` (2026-11-14): caps GPUs at 1 per user on every node, so short can no
-  # longer bypass gpu_big's 1-Blackwell limit. Partition QOS limits override the job QOS (normal: gpu=2).
+  # Partition QOS of `short` (2026-11-14): 2 GPUs per user on every node (same as normal), so a
+  # campus user cannot exceed 1 and nobody exceeds 2 through short. Partition QOS overrides job QOS.
   - name: short_part
-    description: "short partition QOS: 1 GPU per user on any node"
-    settings: "MaxTRESPerUser=gres/gpu=1,gres/shard=4"
+    description: "short partition QOS: 2 GPUs per user on any node"
+    settings: "MaxTRESPerUser=gres/gpu=2,gres/shard=8"
+  # Partition QOS of gpu_big_campus: GrpTRES caps the WHOLE campus account at 1 Blackwell.
+  - name: gpu_big_campus
+    description: "campus on neuroai6: 1 Blackwell for the whole campus account"
+    settings: "GrpTRES=gres/gpu=1,gres/shard=4 MaxTRESPerUser=gres/gpu=1,gres/shard=4"
   - name: campus
     description: "campus collaborators: per-user gpu=1,cpu=16,mem=96g"
     settings: >-
@@ -128,6 +141,9 @@ slurm_accounts:
 # including "Not responding" after a reboot, returns to service once slurmd registers with a
 # valid config. Matches /etc/slurm/slurm.conf on all nodes.
 slurm_return_to_service: 2
+# Reject at submit time a job no partition it names could run (wrong account, over MaxTime, ...)
+# instead of leaving it PENDING forever. Live since 2026-11-14.
+slurm_enforce_part_limits: ANY
 
 hosts_add_ansible_managed_hosts_groups: ["slurm-cluster"]
 # Lenovo XClarity (neuroai6) exposes a LAN-over-USB NIC to the OS (enx..., 172.20.95.120) that only
