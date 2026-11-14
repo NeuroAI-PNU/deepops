@@ -20,4 +20,7 @@ slurm_gpu_shards: 4
 #  - security-baseline.yml items, node/dcgm exporters, rsyslog -> ldap, rasdaemon, cpupower=performance
 
 # Blackwell needs DCGM 4.x; the role default "datacenter-gpu-manager" is the 3.x line (other nodes: 3.3.9).
-dcgm_pkg_name: "datacenter-gpu-manager-4-cuda12"
+# The CUDA flavour must match what the DRIVER reports, not the toolkit: driver 580 reports CUDA 13, and
+# dcgmproftester12 refuses to run ("Expected Cuda version is 12. Installed Cuda version is 13").
+# -cuda12 was installed first (2026-11-13) and is still present; -cuda13 added 2026-11-14.
+dcgm_pkg_name: "datacenter-gpu-manager-4-cuda13"
