@@ -463,7 +463,7 @@ groups:
         annotations:
           summary: 'nightly /home du did not run'
           description: >-
-            home-usage-probe on {{ $labels.instance }} has no result for 26+ hours (runs 01:30; it skips
+            home-usage-probe on {{ $labels.instance }} has no result for 26+ hours (runs 07:30; it skips
             itself while md126 is resyncing/checking). Check: journalctl -u home-usage-probe --since yesterday ; cat /proc/mdstat
 
       # 2026-09-13: replaced HomeUserLarge (fired merely for being big; no quota, so size alone is not

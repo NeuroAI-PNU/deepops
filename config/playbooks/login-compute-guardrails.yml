@@ -99,13 +99,43 @@
         - /etc/slurm/epilog.d/60-exclusive-cpu
         - /etc/slurm/prolog.d/50-exclusive-cpu
 
-    - name: slurm-raidcheck-guard drains ldap too while md126 checks/rebuilds
-      lineinfile:
-        path: /usr/local/bin/slurm-raidcheck-guard.sh
-        regexp: '^NODES='
-        line: "NODES=\"neuroai[1-5],ldap\"               # compute nodes served by this host's /home"
+    # Full scripts live in the repo since 2026-10-04 (before, only the NODES= line was managed and
+    # the rest existed only on ldap). Both now look at the /home array (md126) only: the OS NVMe
+    # IMSM mirror (md124) resyncs after reboots and had drained the whole cluster (2026-09-28).
+    - name: slurm-raidcheck-guard (drain/resume while the /home array rebuilds)
+      copy:
+        src: "{{ playbook_dir }}/../files/guardrails/ldap/slurm-raidcheck-guard.sh"
+        dest: /usr/local/bin/slurm-raidcheck-guard.sh
+        owner: root
+        group: root
+        mode: "0755"
+        backup: yes
+      notify: restart slurm-raidcheck-guard
+
+    - name: home-usage-probe (nightly du of /home, skips while md126 scrubs)
+      copy:
+        src: "{{ playbook_dir }}/../files/guardrails/ldap/home-usage-probe.sh"
+        dest: /usr/local/bin/home-usage-probe.sh
+        owner: root
+        group: root
+        mode: "0755"
+        backup: yes
+
+    - name: home-usage-probe timer at 07:30 (01:30 sat inside the md126 scrub window every month)
+      copy:
+        src: "{{ playbook_dir }}/../files/guardrails/ldap/home-usage-probe.timer.override.conf"
+        dest: /etc/systemd/system/home-usage-probe.timer.d/override.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: daemon-reload
 
   handlers:
     - name: daemon-reload
       systemd:
         daemon_reload: yes
+
+    - name: restart slurm-raidcheck-guard
+      systemd:
+        name: slurm-raidcheck-guard
+        state: restarted
