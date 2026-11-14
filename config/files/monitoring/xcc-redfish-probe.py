@@ -42,10 +42,9 @@ class Bmc:
             return json.load(r)
 
     def members(self, path):
-        try:
-            return [self.get(m["@odata.id"]) for m in self.get(path).get("Members", [])]
-        except Exception:
-            return []
+        # A collection that cannot be read (403 PasswordChangeRequired, 401, timeout) must fail the
+        # whole probe; returning [] here reported success with zero components (seen 2026-11-14).
+        return [self.get(m["@odata.id"]) for m in self.get(path).get("Members", [])]
 
 
 def health(obj):
@@ -118,6 +117,9 @@ def main():
             ok = 1
         except Exception as e:
             print("%s: %s" % (node, e), file=sys.stderr)
+            ok, rc = 0, 1
+        if ok and not any(l.startswith("xcc_health{") for l in lines):
+            print("%s: BMC answered but reported no components" % node, file=sys.stderr)
             ok, rc = 0, 1
         lines.append("xcc_probe_success%s %d" % (lbl(node=node), ok))
         lines.append("xcc_probe_timestamp%s %d" % (lbl(node=node), int(time.time())))
