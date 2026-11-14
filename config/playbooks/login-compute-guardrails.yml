@@ -139,3 +139,20 @@
       systemd:
         name: slurm-raidcheck-guard
         state: restarted
+
+# deepops' exclusive-cpu prolog/epilog set the governor to performance at the start of an --exclusive
+# (or whole-node) job and to POWERSAVE at its end, for the whole node and regardless of other jobs.
+# That silently undid cpupower.service (performance): neuroai3/neuroai5 were found in powersave on
+# 2026-11-14. The site policy is performance at all times, so the two parts are made non-executable
+# (run-parts.sh skips them). ldap already had this in the play above.
+- name: Keep the CPU governor at performance (exclusive-cpu prolog/epilog disabled)
+  hosts: neuroai5:neuroai6
+  become: yes
+  tasks:
+    - name: exclusive-cpu parts not executable
+      file:
+        path: "{{ item }}"
+        mode: "0644"
+      loop:
+        - /etc/slurm/epilog.d/60-exclusive-cpu
+        - /etc/slurm/prolog.d/50-exclusive-cpu
