@@ -1,0 +1,55 @@
+---
+# Node-local /scratch (2026-11-13, neuroai6): per-job dirs + daily expiry.
+#
+#   job start  prolog.d/20-scratch-jobdir   -> /scratch/<user>/<jobid> (0700)
+#   job env    task_prolog.sh               -> export SCRATCH_JOB=/scratch/<user>/<jobid>
+#   job end    epilog.d/20-scratch-jobdir   -> rm -rf that dir
+#   05:15      scratch-cleanup.timer        -> orphaned job dirs (>1 day) and files under /scratch/<user>/
+#                                              not read or modified for 30 days are deleted
+#
+# /scratch is not backed up. Hosts: the scratch_nodes group if defined, else neuroai6.
+# Run:  ansible-playbook config/playbooks/node-scratch.yml
+- name: Node-local scratch
+  hosts: "{{ groups['scratch_nodes'] | default(['neuroai6']) }}"
+  become: yes
+  tasks:
+    - name: prolog / epilog parts
+      copy:
+        src: "{{ playbook_dir }}/../files/scratch/20-scratch-jobdir.{{ item }}"
+        dest: "/etc/slurm/{{ item }}.d/20-scratch-jobdir"
+        owner: slurm
+        group: slurm
+        mode: "0755"
+      loop: [prolog, epilog]
+
+    - name: task_prolog exports SCRATCH_JOB (same template as the slurm role)
+      template:
+        src: "{{ playbook_dir }}/../../roles/slurm/templates/etc/slurm/task_prolog.sh"
+        dest: /etc/slurm/task_prolog.sh
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: cleanup script
+      copy:
+        src: "{{ playbook_dir }}/../files/scratch/scratch-cleanup.sh"
+        dest: /usr/local/sbin/scratch-cleanup.sh
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: cleanup service and timer
+      copy:
+        src: "{{ playbook_dir }}/../files/scratch/{{ item }}"
+        dest: "/etc/systemd/system/{{ item }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop: [scratch-cleanup.service, scratch-cleanup.timer]
+
+    - name: timer enabled
+      systemd:
+        name: scratch-cleanup.timer
+        enabled: yes
+        state: started
+        daemon_reload: yes

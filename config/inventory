@@ -15,6 +15,7 @@ neuroai2     ansible_host=192.168.0.37  #ansible_python_interpreter=/usr/bin/pyt
 neuroai3     ansible_host=192.168.0.33  # HP z4
 neuroai4     ansible_host=192.168.0.36  #ansible_python_interpreter=/usr/bin/python3.10 # KMU old
 neuroai5     ansible_host=192.168.0.9   # sungsu's PC(from PNUYH grant)
+neuroai6     ansible_host=192.168.0.106 # Lenovo SR650a V4, 2x RTX PRO 6000 Blackwell (2026-11-13)
 
 
 ######
@@ -59,6 +60,7 @@ neuroai2
 neuroai3
 neuroai4
 neuroai5
+neuroai6
 #gpu01
 #gpu02
 
@@ -94,8 +96,9 @@ slurm-login
 # SSH User
 ansible_user=hyunsu
 ansible_ssh_private_key_file='~/.ssh/id_rsa'
-become=yes
-become_user=hyunsu
-become_method=sudo
+# Privilege escalation: the playbooks set `become: yes` themselves and escalate to root.
+# The bare `become=yes` / `become_user=hyunsu` / `become_method=sudo` lines that used to be here
+# were never ansible variables (inventory needs the ansible_ prefix), so ansible ignored them with a
+# "reserved name" warning. Removed 2026-11-13; behaviour is unchanged (checked: -b -> root on all hosts).
 # SSH bastion/jumpbox
 #ansible_ssh_common_args='-o ProxyCommand="ssh -W %h:%p -q ubuntu@10.0.0.1"'
