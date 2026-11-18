@@ -157,8 +157,8 @@
         - /etc/slurm/epilog.d/60-exclusive-cpu
         - /etc/slurm/prolog.d/50-exclusive-cpu
 
-# neuroai6 fan noise (2026-11-14): both Blackwells at 600 W ran the fans at ~18,600 rpm (~2.1 kW).
-# 400 W per GPU keeps ~77 % of tensor throughput with fans at ~7,500 rpm. Value lives in the unit file.
+# neuroai6 fan noise: 300 W per GPU since 2026-11-18 (8-10 min steady-state tests: one card at 400 W pushed
+# the fans to 9-10k rpm; at 300 W the GPU settled at 71 C with fans at idle). Value lives in the unit file.
 - name: neuroai6 - GPU power limit
   hosts: neuroai6
   become: yes
@@ -178,9 +178,9 @@
         state: started
         daemon_reload: yes
 
-# neuroai6 MIG (2026-11-18): GPU1 split into 4x 1g.24gb. MIG mode survives a reboot but the instances do
-# not; nvidia-mig-setup.service recreates them (GPU instance IDs 3-6, matching gres.conf) before slurmd.
-- name: neuroai6 - MIG layout on GPU1
+# neuroai6 MIG (2026-11-18): both cards 4x 1g.24gb. MIG mode survives a reboot but the instances do not;
+# nvidia-mig-setup.service recreates them before slurmd.
+- name: neuroai6 - MIG layout on both GPUs
   hosts: neuroai6
   become: yes
   tasks:

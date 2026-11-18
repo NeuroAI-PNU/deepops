@@ -92,9 +92,10 @@ slurm_qos:
       MaxTRESPerUser=cpu=128,gres/gpu=2,gres/shard=8,mem=244G
       MaxJobsPerUser=30 MaxSubmitJobsPerUser=200
   # Used by the gpu_big partition (neuroai6 since 2026-11-13).
+  # 2026-11-18: neuroai6 is 8 MIG slices (24 GB each); a slice counts as one gres/gpu -> 3 slices per user.
   - name: gpu_big
-    description: "gpu_big: max 1 gpu per user"
-    settings: "MaxTRESPerUser=gres/gpu=1,gres/shard=4"
+    description: "gpu_big: max 3 MIG slices (1g.24gb) per user"
+    settings: "MaxTRESPerUser=gres/gpu=3"
   # Partition QOS of `short` (2026-11-14): 2 GPUs per user on every node (same as normal), so a
   # campus user cannot exceed 1 and nobody exceeds 2 through short. Partition QOS overrides job QOS.
   # cpu=180 only here: short jobs end within 4 h, so a larger share is fine while the cluster is idle;
