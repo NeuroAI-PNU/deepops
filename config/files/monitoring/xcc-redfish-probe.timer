@@ -1,9 +1,9 @@
 [Unit]
-Description=Poll BMC Redfish health every 5 minutes
+Description=Poll BMC Redfish health, fans, temperatures and power every minute
 
 [Timer]
 OnBootSec=2min
-OnUnitActiveSec=5min
+OnUnitActiveSec=1min
 
 [Install]
 WantedBy=timers.target

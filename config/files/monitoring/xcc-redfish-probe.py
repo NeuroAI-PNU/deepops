@@ -17,6 +17,9 @@ Output: /run/prometheus/xcc_<node>.prom
                                        volume, drive, fan, temperature, psu; absent parts skipped)
     xcc_drive_failure_predicted{node,name}   1 if the drive predicts failure
     xcc_drive_life_left_percent{node,name}   SSD endurance left, when the BMC reports it
+    xcc_fan_rpm{node,name}             fan speed (front/rear rotor of each fan module)
+    xcc_temperature_celsius{node,name} every BMC temperature sensor (Ambient Temp = intake)
+    xcc_power_watts{node}              whole-server power draw
 """
 import base64, glob, json, os, ssl, sys, time, urllib.request
 
@@ -96,13 +99,24 @@ def probe(node, cfg):
         if th:
             t = b.get(th)
             for f in t.get("Fans", []):
-                add("fan", f.get("Name") or f.get("MemberId"), f)
+                name = f.get("Name") or f.get("MemberId")
+                add("fan", name, f)
+                # 2026-11-18: fan speed for noise reports ("jet noise with 3 jobs") - health alone said nothing.
+                if health(f) is not None and isinstance(f.get("Reading"), (int, float)):
+                    out.append("xcc_fan_rpm%s %g" % (lbl(node=node, name=name), f["Reading"]))
             for s in t.get("Temperatures", []):
-                add("temperature", s.get("Name") or s.get("MemberId"), s)
+                name = s.get("Name") or s.get("MemberId")
+                add("temperature", name, s)
+                if isinstance(s.get("ReadingCelsius"), (int, float)):
+                    out.append("xcc_temperature_celsius%s %g" % (lbl(node=node, name=name), s["ReadingCelsius"]))
         pw = (ch.get("Power") or {}).get("@odata.id")
         if pw:
-            for p in b.get(pw).get("PowerSupplies", []):
+            pwr = b.get(pw)
+            for p in pwr.get("PowerSupplies", []):
                 add("psu", p.get("Name") or p.get("MemberId"), p)
+            for c in pwr.get("PowerControl", [])[:1]:
+                if isinstance(c.get("PowerConsumedWatts"), (int, float)):
+                    out.append("xcc_power_watts%s %g" % (lbl(node=node), c["PowerConsumedWatts"]))
     return ["xcc_health%s %d" % (lbl(node=node, kind=k, name=n), h) for (k, n), h in seen.items()] + out
 
 
