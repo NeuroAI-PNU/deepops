@@ -142,6 +142,12 @@ slurm_accounts:
 # Live value since before 2026-09 (role default is 1): a node that was DOWN for any reason,
 # including "Not responding" after a reboot, returns to service once slurmd registers with a
 # valid config. Matches /etc/slurm/slurm.conf on all nodes.
+# System packages user software links against (installed on every node by playbooks/generic/software.yml).
+# libfftw3-single3: spack gromacs 2024.5 (gcc 12) / 2025.2 link the system single-precision FFTW;
+# neuroai6 lacked it and gmx_mpi failed with "libfftw3f.so.3: cannot open shared object file" (2026-11-17).
+software_extra_packages:
+  - libfftw3-single3
+
 slurm_return_to_service: 2
 # Reject at submit time a job no partition it names could run (wrong account, over MaxTime, ...)
 # instead of leaving it PENDING forever. Live since 2026-11-14.
