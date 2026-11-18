@@ -206,3 +206,12 @@
         enabled: yes
         daemon_reload: yes
 
+    # dcgm-exporter's embedded hostengine cannot see MIG inside the container; use the host's instead.
+    - name: dcgm-exporter uses the host nv-hostengine (MIG)
+      copy:
+        src: "{{ playbook_dir }}/../files/neuroai6/dcgm-exporter-20-mig.conf"
+        dest: /etc/systemd/system/docker.dcgm-exporter.service.d/20-mig.conf
+        owner: root
+        group: root
+        mode: "0644"
+
