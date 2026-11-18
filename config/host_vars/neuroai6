@@ -24,3 +24,10 @@ slurm_gpu_shards: 4
 # dcgmproftester12 refuses to run ("Expected Cuda version is 12. Installed Cuda version is 13").
 # -cuda12 was installed first (2026-11-13) and is still present; -cuda13 added 2026-11-14.
 dcgm_pkg_name: "datacenter-gpu-manager-4-cuda13"
+
+# MIG (2026-11-18): GPU1 = 4x 1g.24gb, GPU0 whole with the 4 shards. GPU types are the exact NVML names:
+# short names get substring-matched onto a MIG slice by slurmd and devices are dropped.
+slurm_node_gres: "gpu:nvidia_rtx_pro_6000_blackwell_server_edition_1g.24gb:4,gpu:nvidia_rtx_pro_6000_blackwell_server_edition:1,shard:4"
+slurm_gres_conf_src: "{{ inventory_dir }}/files/neuroai6/gres.conf"
+# The MIG layout itself is recreated at boot by nvidia-mig-setup.service
+# (config/files/neuroai6/nvidia-mig-setup.{sh,service}, login-compute-guardrails.yml).

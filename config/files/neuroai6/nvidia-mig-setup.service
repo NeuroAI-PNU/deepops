@@ -1,0 +1,14 @@
+# neuroai6: recreate MIG instances on GPU1 before Slurm and the GPU exporters start.
+[Unit]
+Description=Recreate MIG layout on GPU1 (4x 1g.24gb)
+After=nvidia-persistenced.service
+Wants=nvidia-persistenced.service
+Before=slurmd.service nvidia-dcgm.service docker.dcgm-exporter.service nvidia-power-limit.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/nvidia-mig-setup.sh
+
+[Install]
+WantedBy=multi-user.target

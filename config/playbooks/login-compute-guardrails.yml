@@ -177,3 +177,32 @@
         enabled: yes
         state: started
         daemon_reload: yes
+
+# neuroai6 MIG (2026-11-18): GPU1 split into 4x 1g.24gb. MIG mode survives a reboot but the instances do
+# not; nvidia-mig-setup.service recreates them (GPU instance IDs 3-6, matching gres.conf) before slurmd.
+- name: neuroai6 - MIG layout on GPU1
+  hosts: neuroai6
+  become: yes
+  tasks:
+    - name: MIG setup script
+      copy:
+        src: "{{ playbook_dir }}/../files/neuroai6/nvidia-mig-setup.sh"
+        dest: /usr/local/sbin/nvidia-mig-setup.sh
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: MIG setup unit
+      copy:
+        src: "{{ playbook_dir }}/../files/neuroai6/nvidia-mig-setup.service"
+        dest: /etc/systemd/system/nvidia-mig-setup.service
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: MIG setup enabled
+      systemd:
+        name: nvidia-mig-setup
+        enabled: yes
+        daemon_reload: yes
+
