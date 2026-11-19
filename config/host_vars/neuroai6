@@ -6,8 +6,7 @@
 #
 # Blackwell needs the OPEN kernel modules: nvidia-driver-580-server-open (Ubuntu repo,
 # same 580.178.04 as the other nodes) and DCGM 4.x (datacenter-gpu-manager-4-cuda12).
-slurm_node_features: "rtxpro6000,blackwell,mig,vram24"
-# No shards since 2026-11-18: both cards are MIG (shards cannot live inside a MIG slice in Slurm 22.05).
+slurm_node_features: "rtxpro6000,blackwell,vram96,shard"
 
 # Applied by hand on 2026-11-13 (no ansible in the cluster), mirroring neuroai5 unless noted:
 #  - apt pin config/files/neuroai6/apt-preferences-nvidia-driver-from-ubuntu
@@ -15,7 +14,7 @@ slurm_node_features: "rtxpro6000,blackwell,mig,vram24"
 #  - CUDA 12.9 toolkit, datacenter-gpu-manager-4-cuda12 (4.8), nvidia-container-toolkit, docker-ce
 #  - LDAP/NSS/PAM files copied verbatim from neuroai5; /etc/localusers = root, hyunsu, hyunsu_local
 #  - local admin hyunsu_local (uid 1000) lives in /home0 like on neuroai4, so the NFS /home cannot hide it
-#  - Slurm 22.05.2 binaries copied from neuroai5's /usr/local build; gres.conf = nvml (shards per GPU until 2026-11-18, now all-MIG)
+#  - Slurm 22.05.2 binaries copied from neuroai5's /usr/local build; gres.conf = nvml + 4 shards per GPU (all-MIG 2026-11-18..19)
 #  - security-baseline.yml items, node/dcgm exporters, rsyslog -> ldap, rasdaemon, cpupower=performance
 
 # Blackwell needs DCGM 4.x; the role default "datacenter-gpu-manager" is the 3.x line (other nodes: 3.3.9).
@@ -24,9 +23,12 @@ slurm_node_features: "rtxpro6000,blackwell,mig,vram24"
 # -cuda12 was installed first (2026-11-13) and is still present; -cuda13 added 2026-11-14.
 dcgm_pkg_name: "datacenter-gpu-manager-4-cuda13"
 
-# MIG (2026-11-18): both cards 4x 1g.24gb = 8 slices of 24 GB (VRAM-isolated, 46 SMs each). One GPU type,
-# so gres.conf is plain NVML autodetect. Decided after the noise tests: no need for a whole 96 GB card.
-slurm_node_gres: "gpu:nvidia_rtx_pro_6000_blackwell_server_edition_1g.24gb:8"
+# 2026-11-19: back to whole cards (MIG off) + 4 shards per card (MPS) = gpu:2,shard:8, power 300 W.
+# Measured with eunjin's SCN2A GROMACS system (32 CPUs/job): 1 job on a whole card/shard 244-246 ns/day vs
+# 88 on a 1g.24gb MIG slice; 8 jobs at 300 W: shard 446 vs MIG 467 ns/day total, fans 6.9k/7.7k vs 7.4k/8.4k rpm.
+# 400 W pushed fans to 12k rpm (heard through earphones next door), so 300 W stays.
+# Shards do not isolate VRAM: users keep each shard job under ~24 GB.
+slurm_node_gres: "gpu:2,shard:8"
 slurm_gres_conf_src: "{{ inventory_dir }}/files/neuroai6/gres.conf"
-# The MIG layout itself is recreated at boot by nvidia-mig-setup.service
-# (config/files/neuroai6/nvidia-mig-setup.{sh,service}, login-compute-guardrails.yml).
+# MIG instances: nvidia-mig-setup.{sh,service} is kept but DISABLED (login-compute-guardrails.yml).
+# To go back to MIG: nvidia-smi -i N -mig 1, enable the unit, gres.conf AutoDetect only, Gres=gpu:<1g.24gb type>:8.

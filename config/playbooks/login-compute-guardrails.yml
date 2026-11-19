@@ -178,9 +178,9 @@
         state: started
         daemon_reload: yes
 
-# neuroai6 MIG (2026-11-18): both cards 4x 1g.24gb. MIG mode survives a reboot but the instances do not;
-# nvidia-mig-setup.service recreates them before slurmd.
-- name: neuroai6 - MIG layout on both GPUs
+# neuroai6 MIG: all-MIG (2026-11-18) was reverted to whole cards + shards on 2026-11-19. The setup script and
+# unit stay installed but the unit is DISABLED, so a reboot keeps MIG off. Enable it to go back to MIG.
+- name: neuroai6 - MIG setup (installed, disabled)
   hosts: neuroai6
   become: yes
   tasks:
@@ -200,13 +200,14 @@
         group: root
         mode: "0644"
 
-    - name: MIG setup enabled
+    - name: MIG setup disabled (whole cards + shards since 2026-11-19)
       systemd:
         name: nvidia-mig-setup
-        enabled: yes
+        enabled: no
         daemon_reload: yes
 
     # dcgm-exporter's embedded hostengine cannot see MIG inside the container; use the host's instead.
+    # Harmless without MIG, kept so switching back needs no exporter change.
     - name: dcgm-exporter uses the host nv-hostengine (MIG)
       copy:
         src: "{{ playbook_dir }}/../files/neuroai6/dcgm-exporter-20-mig.conf"
