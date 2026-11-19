@@ -103,9 +103,11 @@ slurm_qos:
   # campus user cannot exceed 1 and nobody exceeds 2 through short. Partition QOS overrides job QOS.
   # cpu=180 only here: short jobs end within 4 h, so a larger share is fine while the cluster is idle;
   # long partitions keep normal's cpu=128. Verified live: user went 120 -> 144 CPUs once set.
+  # 2026-11-20: gpu 2 -> 3, shard 8 -> 12 (about half of 6 GPUs / 22 shards, like cpu=180). gpu and shard are
+  # counted separately, so one user can hold gpu:3 + shard:12 for up to 4 h; accepted (4 h limit + fairshare).
   - name: short_part
-    description: "short partition QOS: per user cpu 180, 2 GPUs (long partitions keep normal cpu=128)"
-    settings: "MaxTRESPerUser=cpu=180,gres/gpu=2,gres/shard=8"
+    description: "short partition QOS: per user cpu 180, 3 GPUs, 12 shards (about half the cluster; 4 h limit)"
+    settings: "MaxTRESPerUser=cpu=180,gres/gpu=3,gres/shard=12"
   # Partition QOS of gpu_big_campus: GrpTRES caps the WHOLE campus account at 1 Blackwell.
   - name: gpu_big_campus
     description: "campus on neuroai6: 1 Blackwell for the whole campus account"
