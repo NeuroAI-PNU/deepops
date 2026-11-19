@@ -64,7 +64,7 @@ slurm_partitions:
     default_time: "1-00:00:00"
     priority: 60
     qos: gpu_big
-    extra: "DefCpuPerGPU=2 AllowAccounts=compute-account,root"
+    extra: "DefCpuPerGPU=2 TRESBillingWeights=GRES/gpu=4,GRES/shard=1 AllowAccounts=compute-account,root"
     comment: "2026-11-14: lab only; campus uses gpu_big_campus"
   # Same node for campus: QOS caps the whole account at 1 Blackwell, and Priority 20 < 60 puts it in a
   # lower PriorityTier so pending lab jobs on neuroai6 go first.
@@ -74,7 +74,7 @@ slurm_partitions:
     default_time: "1-00:00:00"
     priority: 20
     qos: gpu_big_campus
-    extra: "DefCpuPerGPU=2 AllowAccounts=campus,root"
+    extra: "DefCpuPerGPU=2 TRESBillingWeights=GRES/gpu=4,GRES/shard=1 AllowAccounts=campus,root"
   - name: cpu
     nodes: "neuroai1,neuroai3,neuroai5"
     max_time: "INFINITE"
@@ -94,8 +94,11 @@ slurm_qos:
   # Used by the gpu_big partition (neuroai6 since 2026-11-13).
   # 2026-11-19: neuroai6 whole cards + 4 shards each (MIG 2026-11-18..19 reverted) -> 1 card or 4 shards per user.
   - name: gpu_big
-    description: "gpu_big: max 1 gpu or 4 shards per user"
-    settings: "MaxTRESPerUser=gres/gpu=1,gres/shard=4"
+    # Slurm counts gres/gpu and gres/shard separately, so gpu=1,shard=4 let one user hold gpu:1 on one card AND
+    # shard:4 on the other (tested 2026-11-19). The partitions bill GRES/gpu=4,GRES/shard=1 (no CPU weight), so
+    # billing=4 means "1 card or 4 shards" in any mix. Side effect: fairshare usage there is GPU-based.
+    description: "gpu_big: 1 card per user (gpu=4, shard=1 billing)"
+    settings: "MaxTRESPerUser=billing=4"
   # Partition QOS of `short` (2026-11-14): 2 GPUs per user on every node (same as normal), so a
   # campus user cannot exceed 1 and nobody exceeds 2 through short. Partition QOS overrides job QOS.
   # cpu=180 only here: short jobs end within 4 h, so a larger share is fine while the cluster is idle;
@@ -106,7 +109,7 @@ slurm_qos:
   # Partition QOS of gpu_big_campus: GrpTRES caps the WHOLE campus account at 1 Blackwell.
   - name: gpu_big_campus
     description: "campus on neuroai6: 1 Blackwell for the whole campus account"
-    settings: "GrpTRES=gres/gpu=1,gres/shard=4 MaxTRESPerUser=gres/gpu=1,gres/shard=4"
+    settings: "GrpTRES=billing=4 MaxTRESPerUser=billing=4"  # billing: see gpu_big (1 card or 4 shards, whole account)
   - name: campus
     description: "campus collaborators: per-user gpu=1,cpu=16,mem=96g"
     settings: >-
