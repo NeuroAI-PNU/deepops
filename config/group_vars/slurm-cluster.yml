@@ -62,7 +62,10 @@ slurm_partitions:
     nodes: "neuroai6"
     max_time: "INFINITE"
     default_time: "1-00:00:00"
-    priority: 60
+    # 2026-11-20: 60 -> 110, above short (100). Like batch (10) yielding to gpu/cpu, the general-purpose short
+    # yields neuroai6 to people who ask for gpu_big specifically; elsewhere short stays first. Preemption is off,
+    # so only pending order changes.
+    priority: 110
     qos: gpu_big
     extra: "DefCpuPerGPU=2 TRESBillingWeights=GRES/gpu=4,GRES/shard=1 AllowAccounts=compute-account,root"
     comment: "2026-11-14: lab only; campus uses gpu_big_campus"
