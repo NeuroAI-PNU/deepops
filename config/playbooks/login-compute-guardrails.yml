@@ -158,25 +158,42 @@
         - /etc/slurm/prolog.d/50-exclusive-cpu
 
 # neuroai6 fan noise: 300 W per GPU since 2026-11-18 (8-10 min steady-state tests: one card at 400 W pushed
-# the fans to 9-10k rpm; at 300 W the GPU settled at 71 C with fans at idle). Value lives in the unit file.
-- name: neuroai6 - GPU power limit
+# the fans to 9-10k rpm; at 300 W the GPU settled at 71 C with fans at idle). 2026-11-20: by time of day -
+# 300 W 08:00-21:00, 400 W at night (nvidia-power-schedule.sh; the timer re-runs the unit at 08:00/21:00).
+- name: neuroai6 - GPU power limit (300 W day / 400 W night)
   hosts: neuroai6
   become: yes
   tasks:
-    - name: power-limit unit
+    - name: power schedule script
       copy:
-        src: "{{ playbook_dir }}/../files/neuroai6/nvidia-power-limit.service"
-        dest: /etc/systemd/system/nvidia-power-limit.service
+        src: "{{ playbook_dir }}/../files/neuroai6/nvidia-power-schedule.sh"
+        dest: /usr/local/sbin/nvidia-power-schedule.sh
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: power-limit unit and timer
+      copy:
+        src: "{{ playbook_dir }}/../files/neuroai6/{{ item }}"
+        dest: "/etc/systemd/system/{{ item }}"
         owner: root
         group: root
         mode: "0644"
+      loop:
+        - nvidia-power-limit.service
+        - nvidia-power-limit.timer
 
-    - name: power-limit unit enabled and applied
+    - name: power-limit unit enabled (boot)
       systemd:
         name: nvidia-power-limit
         enabled: yes
-        state: started
         daemon_reload: yes
+
+    - name: power-limit timer enabled (08:00 / 21:00)
+      systemd:
+        name: nvidia-power-limit.timer
+        enabled: yes
+        state: started
 
 # neuroai6 MIG: all-MIG (2026-11-18) was reverted to whole cards + shards on 2026-11-19. The setup script and
 # unit stay installed but the unit is DISABLED, so a reboot keeps MIG off. Enable it to go back to MIG.

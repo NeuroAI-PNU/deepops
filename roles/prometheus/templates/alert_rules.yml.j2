@@ -687,4 +687,17 @@ groups:
             {{ $labels.node }}: xcc-redfish-probe on ldap has written no result for 30+ minutes (timer stopped?), so BMC alerts are silent.
 
             `ssh ldap "systemctl list-timers xcc-redfish-probe.timer; sudo journalctl -u xcc-redfish-probe -n 5"`
+
+      - alert: Neuroai6FanLoudDaytime
+        expr: avg_over_time(max(xcc_fan_rpm{node="neuroai6"})[10m:1m]) > 8500 and on() (hour() >= 23 or hour() < 12)
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "neuroai6 fans loud in daytime ({{ $value | humanize }} rpm)"
+          description: |-
+            neuroai6: fans have averaged over 8,500 rpm for 30+ minutes during the day (08-21 KST), audible next door. Usually both Blackwells are full at 300 W, worse when the server-room intake is warm (spec <= 25 C).
+
+            `squeue -w neuroai6`
+
 {% endraw %}

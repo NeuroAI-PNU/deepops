@@ -5,7 +5,9 @@
 #   300 W: fans  ~6,100 rpm (= idle), server 924 W, ~233 TFLOPS/GPU (59 %)
 #   NOTE: the numbers above are 3.5-min runs and underestimate fans (they lag ~1-2 min behind GPU temp).
 #   8-10 min steady state, one card fully loaded: 400 W -> 9-10k rpm; 300 W -> GPU 71 C, fans idle (~6,000 rpm).
-# Change GPU_POWER_LIMIT_W below (300..600) and `systemctl restart nvidia-power-limit`.
+# 2026-11-20: time of day via /usr/local/sbin/nvidia-power-schedule.sh (day 300 W, 21:00-08:00 400 W);
+# nvidia-power-limit.timer re-runs this unit at 08:00 and 21:00. Change DAY_W/NIGHT_W below (300..600),
+# then `systemctl daemon-reload && systemctl restart nvidia-power-limit`.
 [Unit]
 Description=Cap NVIDIA GPU power limit (fan noise)
 After=nvidia-persistenced.service
@@ -13,9 +15,8 @@ Wants=nvidia-persistenced.service
 
 [Service]
 Type=oneshot
-RemainAfterExit=yes
-Environment=GPU_POWER_LIMIT_W=300
-ExecStart=/usr/bin/nvidia-smi -pl ${GPU_POWER_LIMIT_W}
+Environment=DAY_W=300 NIGHT_W=400
+ExecStart=/usr/local/sbin/nvidia-power-schedule.sh
 
 [Install]
 WantedBy=multi-user.target
