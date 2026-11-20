@@ -7,6 +7,9 @@
 # Blackwell needs the OPEN kernel modules: nvidia-driver-580-server-open (Ubuntu repo,
 # same 580.178.04 as the other nodes) and DCGM 4.x (datacenter-gpu-manager-4-cuda12).
 slurm_node_features: "rtxpro6000,blackwell,vram96,shard"
+# 2026-11-20: Weight=50 (others 1, ldap 100): short jobs fill neuroai1-5 first, then neuroai6, then ldap,
+# so the noisy Blackwells are used last when the GPU nodes have room.
+slurm_node_extra: "Weight=50"
 
 # Applied by hand on 2026-11-13 (no ansible in the cluster), mirroring neuroai5 unless noted:
 #  - apt pin config/files/neuroai6/apt-preferences-nvidia-driver-from-ubuntu
